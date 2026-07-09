@@ -385,17 +385,16 @@
         resetCurrentCarton(false);
         renderAll();
 
-        await postApi({ action: 'createJob', payload: { ...job, importDuplicates: parsed.duplicates } });
+        await apiCall({ action: 'createJob', payload: { ...job, importDuplicates: parsed.duplicates } });
 
-        const chunkSize = 500;
         let uploaded = 0;
-        for (let start = 0; start < parsed.codes.length; start += chunkSize) {
-          const chunk = parsed.codes.slice(start, start + chunkSize);
-          await postApi({ action: 'appendCodesChunk', jobId, codes: chunk, stats: { duplicates: 0 } });
+        const chunks = makeUploadChunks(parsed.codes);
+        for (const chunk of chunks) {
+          await apiCall({ action: 'appendCodesChunk', jobId, codes: chunk, stats: { duplicates: 0 } });
           uploaded += chunk.length;
           setImportProgress(uploaded / parsed.codes.length, `${uploaded.toLocaleString('tr-TR')} / ${parsed.codes.length.toLocaleString('tr-TR')} tekil kod yüklendi`);
         }
-        await postApi({ action: 'finalizeImport', jobId });
+        await apiCall({ action: 'finalizeImport', jobId });
 
         const skipped = parsed.suspectFragments ? ` | ${parsed.suspectFragments.toLocaleString('tr-TR')} kısa parça atlandı` : '';
         showNotice(`Kod datası hazır: ${parsed.codes.length.toLocaleString('tr-TR')} tekil kod${skipped}`, 'ok');
@@ -588,7 +587,7 @@
         const startedAt = state.cartonStartedAt || Date.now();
         const durationSeconds = Math.round(((Date.now() - startedAt) / 1000) * 10) / 10;
         const scans = compactCycleEvents();
-        await postApi({
+        await apiCall({
           action: 'commitCarton',
           payload: {
             jobId: state.activeJob.jobId,
@@ -657,13 +656,54 @@
       if (showMessage) showNotice('Aktif koli ekranı sıfırlandı.', 'warn');
     }
 
-    async function postApi(payload) {
-      await fetch(API_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload),
-        keepalive: false
+    function makeUploadChunks(codes) {
+      const chunks = [];
+      let chunk = [];
+      let size = 0;
+      codes.forEach(code => {
+        const nextSize = size + code.length + 8;
+        if (chunk.length && nextSize > 9000) {
+          chunks.push(chunk);
+          chunk = [];
+          size = 0;
+        }
+        chunk.push(code);
+        size += code.length + 8;
+      });
+      if (chunk.length) chunks.push(chunk);
+      return chunks;
+    }
+
+    function apiCall(payload) {
+      return new Promise((resolve, reject) => {
+        const callback = '__dmApiCallback_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+        const timeout = window.setTimeout(() => {
+          cleanup();
+          reject(new Error('Apps Script API zaman aşımı.'));
+        }, 45000);
+        const script = document.createElement('script');
+
+        function cleanup() {
+          window.clearTimeout(timeout);
+          delete window[callback];
+          if (script.parentNode) script.parentNode.removeChild(script);
+        }
+
+        window[callback] = response => {
+          cleanup();
+          if (!response || response.ok === false) {
+            reject(new Error(response && response.message ? response.message : 'Apps Script API hatası.'));
+            return;
+          }
+          resolve(response.result);
+        };
+
+        script.onerror = () => {
+          cleanup();
+          reject(new Error('Apps Script API çağrısı başarısız.'));
+        };
+        script.src = API_URL + '?api=1&callback=' + encodeURIComponent(callback) + '&payload=' + encodeURIComponent(JSON.stringify(payload));
+        document.head.appendChild(script);
       });
     }
 
