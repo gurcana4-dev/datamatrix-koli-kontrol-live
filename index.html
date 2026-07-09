@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>DataMatrix Tek Ekran</title>
+  <title>DataMatrix Koli Kontrol</title>
   <style>
     :root {
       --bg: #f6f7f9;
@@ -13,12 +13,16 @@
       --line: #dfe5e1;
       --accent: #0f766e;
       --accent-soft: #dff5f1;
+      --ok: #15803d;
+      --ok-soft: #dcfce7;
       --bad: #b91c1c;
+      --bad-soft: #fee2e2;
+      --warn: #b45309;
+      --warn-soft: #fef3c7;
       --shadow: 0 12px 34px rgba(23, 33, 27, .08);
     }
 
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
       min-height: 100vh;
@@ -27,366 +31,461 @@
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
-    .shell {
-      width: min(1740px, calc(100vw - 18px));
-      margin: 0 auto;
-      padding: 10px 0;
+    button, input, select, textarea { font: inherit; }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 11px 14px;
+      background: var(--ink);
+      color: #fff;
+      font-weight: 850;
+      cursor: pointer;
+    }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      padding: 10px 11px;
+      outline: 0;
+    }
+    textarea {
+      min-height: 108px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+    }
+    label {
+      display: block;
+      margin: 0 0 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .02em;
+      text-transform: uppercase;
     }
 
+    .app {
+      width: min(1680px, calc(100vw - 18px));
+      margin: 0 auto;
+      padding: 10px 0 20px;
+    }
     .topbar {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: 1fr auto;
       gap: 12px;
       align-items: center;
       margin-bottom: 10px;
-      padding: 10px 12px;
+      padding: 12px 14px;
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
       box-shadow: var(--shadow);
     }
-
-    h1 {
-      margin: 0;
-      font-size: clamp(18px, 2.2vw, 26px);
-      line-height: 1.05;
-    }
-
-    .topbar p {
-      margin: 4px 0 0;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
+    h1 { margin: 0; font-size: clamp(20px, 2.4vw, 30px); line-height: 1.05; }
+    .topbar p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .status-line { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .pill {
       display: inline-flex;
       align-items: center;
       min-height: 30px;
       padding: 6px 10px;
       border-radius: 999px;
-      background: var(--accent-soft);
-      color: var(--accent);
+      background: #edf1ef;
+      color: var(--muted);
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 850;
       white-space: nowrap;
     }
+    .pill.ok { background: var(--ok-soft); color: var(--ok); }
+    .pill.bad { background: var(--bad-soft); color: var(--bad); }
+    .pill.warn { background: var(--warn-soft); color: var(--warn); }
+    .pill.accent { background: var(--accent-soft); color: var(--accent); }
 
     .layout {
       display: grid;
-      grid-template-columns: minmax(430px, 44vw) minmax(520px, 1fr);
+      grid-template-columns: 350px minmax(440px, 1fr) 350px;
       gap: 10px;
-      align-items: stretch;
-      height: calc(100vh - 88px);
-      min-height: 650px;
+      align-items: start;
     }
-
-    .camera-panel, .app-panel {
-      min-height: 0;
+    .panel {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
       box-shadow: var(--shadow);
       overflow: hidden;
     }
-
-    .camera-panel {
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-    }
-
-    .panel-head, .camera-actions {
+    .panel-head {
       display: flex;
       justify-content: space-between;
-      gap: 8px;
+      gap: 10px;
       align-items: center;
-      padding: 10px;
+      padding: 12px;
       border-bottom: 1px solid var(--line);
     }
+    .panel-head h2 { margin: 0; font-size: 16px; }
+    .panel-body { padding: 12px; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .field { margin-bottom: 9px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .actions button { flex: 1 1 130px; }
+    .secondary { background: #edf1ef; color: var(--ink); border: 1px solid var(--line); }
+    .accent { background: var(--accent); }
+    .danger { background: var(--bad); }
+    .progress { height: 10px; margin-top: 10px; border-radius: 999px; background: #e9eeeb; overflow: hidden; }
+    .progress > span { display: block; width: 0; height: 100%; background: var(--accent); transition: width .2s ease; }
+    .hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 
-    .camera-actions {
-      border-top: 1px solid var(--line);
-      border-bottom: 0;
-      flex-wrap: wrap;
-    }
-
-    .panel-head strong {
-      font-size: 15px;
-    }
-
-    .stage {
+    .camera-shell {
       position: relative;
-      min-height: 0;
+      width: 100%;
+      min-height: 58vh;
       background: #050807;
       overflow: hidden;
+      border-radius: 8px;
     }
-
-    video, canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    canvas { pointer-events: none; }
-
-    .empty {
+    video, canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    canvas.overlay { pointer-events: none; }
+    .camera-empty {
       position: absolute;
       inset: 0;
       display: grid;
       place-items: center;
-      padding: 20px;
-      text-align: center;
       color: rgba(255,255,255,.82);
+      text-align: center;
+      padding: 24px;
       background: rgba(0,0,0,.16);
     }
+    .camera-empty strong { display: block; margin-bottom: 7px; color: #fff; font-size: 18px; }
+    .scanner-controls, .carton-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+    .metric { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfb; }
+    .metric span { display: block; color: var(--muted); font-size: 11px; font-weight: 850; text-transform: uppercase; }
+    .metric strong { display: block; margin-top: 4px; font-size: 22px; line-height: 1; }
+    .current-codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 6px; margin-top: 9px; }
+    .slot { min-height: 32px; border: 1px solid var(--line); border-radius: 8px; display: grid; place-items: center; color: var(--muted); font-size: 12px; font-weight: 900; background: #fff; }
+    .slot.filled { background: var(--ok-soft); border-color: #86efac; color: var(--ok); }
 
-    .empty strong {
-      display: block;
-      margin-bottom: 7px;
-      color: #fff;
-      font-size: 18px;
-    }
-
-    button, select {
-      border: 0;
-      border-radius: 8px;
-      padding: 10px 12px;
-      font: inherit;
-      font-weight: 850;
-    }
-
-    button {
-      background: var(--ink);
-      color: #fff;
-      cursor: pointer;
-    }
-
-    button.secondary {
-      background: #edf1ef;
-      color: var(--ink);
-      border: 1px solid var(--line);
-    }
-
-    button.danger {
-      background: var(--bad);
-    }
-
-    select {
-      min-width: 130px;
-      background: #fff;
-      border: 1px solid var(--line);
-      color: var(--ink);
-    }
-
-    iframe {
-      width: 100%;
-      height: 100%;
-      border: 0;
-      display: block;
-      background: #fff;
-    }
+    .result-columns { display: grid; gap: 9px; }
+    .result-box { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+    .result-box h3 { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0; padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .result-box.ok h3 { background: var(--ok-soft); color: var(--ok); }
+    .result-box.bad h3 { background: var(--bad-soft); color: var(--bad); }
+    .result-box.warn h3 { background: var(--warn-soft); color: var(--warn); }
+    .result-list { max-height: 190px; overflow: auto; padding: 8px; display: grid; gap: 6px; }
+    .code-line { padding: 8px; border: 1px solid var(--line); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.35; word-break: break-all; background: #fbfcfb; }
+    .code-line small { display: block; margin-top: 4px; color: var(--muted); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 850; }
+    .manual-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 9px; }
 
     .notice {
       position: fixed;
       left: 50%;
       bottom: 14px;
-      z-index: 10;
+      z-index: 20;
       width: min(620px, calc(100vw - 24px));
       transform: translateX(-50%) translateY(18px);
       opacity: 0;
       pointer-events: none;
       transition: .18s ease;
     }
-
-    .notice.open {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-
-    .notice-card {
-      padding: 12px 14px;
-      border-radius: 8px;
-      border: 1px solid var(--line);
-      background: #fff;
-      box-shadow: var(--shadow);
-      color: var(--ink);
-      font-weight: 850;
-    }
-
+    .notice.open { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .notice-card { padding: 12px 14px; border-radius: 8px; border: 1px solid var(--line); background: #fff; box-shadow: var(--shadow); font-weight: 850; }
+    .notice-card.ok { border-color: #86efac; color: var(--ok); }
     .notice-card.bad { border-color: #fecaca; color: var(--bad); }
+    .notice-card.warn { border-color: #fcd34d; color: var(--warn); }
 
-    @media (max-width: 980px) {
-      .shell {
-        width: calc(100vw - 8px);
-        padding: 4px 0;
-      }
-
-      .topbar {
-        margin-bottom: 6px;
-      }
-
-      .layout {
-        grid-template-columns: 1fr;
-        grid-template-rows: minmax(300px, 42vh) minmax(560px, 1fr);
-        height: auto;
-        min-height: calc(100vh - 72px);
-      }
-
-      .app-panel {
-        height: 720px;
-      }
+    @media (max-width: 1220px) {
+      .layout { grid-template-columns: 340px 1fr; }
+      .right-col { grid-column: 1 / -1; }
+      .result-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 820px) {
+      .app { width: min(100vw - 8px, 760px); padding-top: 4px; }
+      .topbar, .layout { grid-template-columns: 1fr; }
+      .status-line { justify-content: flex-start; }
+      .field-grid, .scanner-controls, .carton-strip, .result-columns { grid-template-columns: 1fr 1fr; }
+      .camera-shell { min-height: 48vh; }
+    }
+    @media (max-width: 520px) {
+      .field-grid, .scanner-controls, .carton-strip, .result-columns, .manual-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <main class="shell">
+  <div class="app">
     <header class="topbar">
       <div>
-        <h1>DataMatrix Tek Ekran</h1>
-        <p>Kamera bu sayfada çalışır, Google Sheets kayıtları alttaki panelden yönetilir.</p>
+        <h1>DataMatrix Koli Kontrol</h1>
+        <p>Tek ekranda kamera, müşteri datası karşılaştırma ve koli bazlı kayıt.</p>
       </div>
-      <span class="pill" id="statusPill">Hazır</span>
+      <div class="status-line">
+        <span class="pill accent" id="enginePill">Motor: bekliyor</span>
+        <span class="pill" id="jobPill">Data yok</span>
+        <span class="pill ok" id="readyPill">Hazır</span>
+      </div>
     </header>
 
-    <section class="layout">
-      <section class="camera-panel">
-        <div class="panel-head">
-          <strong>Canlı Kamera</strong>
-          <span class="pill" id="enginePill">Motor bekliyor</span>
+    <main class="layout">
+      <section class="panel">
+        <div class="panel-head"><h2>Müşteri Datası</h2></div>
+        <div class="panel-body">
+          <div class="field-grid">
+            <div class="field"><label for="customerInput">Müşteri</label><input id="customerInput" placeholder="Müşteri adı"></div>
+            <div class="field"><label for="orderInput">Lot / Parti</label><input id="orderInput" placeholder="Opsiyonel"></div>
+          </div>
+          <div class="field-grid">
+            <div class="field"><label for="productInput">Ürün</label><input id="productInput" placeholder="Ürün kodu / adı"></div>
+            <div class="field"><label for="cartonSizeInput">Koli İçi Adet</label><input id="cartonSizeInput" type="number" min="1" value="24"></div>
+          </div>
+          <div class="field">
+            <label for="fileInput">Kod Dosyası</label>
+            <input id="fileInput" type="file" accept=".txt,.csv,text/plain,text/csv">
+            <p class="hint">En güvenli format: her satırda tam bir kod. Virgüllü DataMatrix metinleri artık bölünmez.</p>
+          </div>
+          <div class="field">
+            <label for="codesText">Veya Kodları Yapıştır</label>
+            <textarea id="codesText" spellcheck="false" placeholder="0104680810252422215_eeZXF_n'BuC91EE1192h/goeyLO/NV9Y4qLagmNBIqIA2zxa2LRDVW96dhKpVc="></textarea>
+          </div>
+          <div class="actions"><button class="accent" id="importBtn" type="button">Kod Datasını Yükle ve Hazırla</button></div>
+          <div class="progress"><span id="importProgress"></span></div>
+          <p class="hint" id="importStatus">Müşteri kod datası yüklendiğinde tarama hazır olur.</p>
         </div>
-        <div class="stage">
-          <video id="video" playsinline muted autoplay></video>
-          <canvas id="overlay"></canvas>
-          <div class="empty" id="empty">
-            <div>
-              <strong>Kamerayı başlat</strong>
-              Kod datasını alttaki panelden yükle, sonra Başlat ile okut.
-            </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Canlı Çoklu Okuma</h2>
+          <span class="pill" id="scanStatePill">Kapalı</span>
+        </div>
+        <div class="panel-body">
+          <div class="camera-shell">
+            <video id="video" playsinline muted autoplay></video>
+            <canvas class="overlay" id="overlay"></canvas>
+            <div class="camera-empty" id="cameraEmpty"><div><strong>Kamerayı başlat</strong>Kod datasını yükle, sonra Başlat.</div></div>
+          </div>
+          <div class="scanner-controls">
+            <select id="resolutionSelect"><option value="1920x1080" selected>Full HD</option><option value="1280x720">HD</option><option value="3840x2160">4K dene</option></select>
+            <button class="accent" id="startBtn" type="button">Başlat</button>
+            <button class="secondary" id="stopBtn" type="button">Durdur</button>
+            <button class="secondary" id="resetCartonBtn" type="button">Koli Sıfırla</button>
+          </div>
+          <div class="carton-strip">
+            <div class="metric"><span>Aktif koli</span><strong id="cartonNoMetric">-</strong></div>
+            <div class="metric"><span>Koli doluluk</span><strong id="cartonFillMetric">0/0</strong></div>
+            <div class="metric"><span>Son süre</span><strong id="durationMetric">0.0s</strong></div>
+            <div class="metric"><span>İndeks</span><strong id="indexMetric">0</strong></div>
+          </div>
+          <div class="current-codes" id="currentSlots"></div>
+          <div class="manual-row"><input id="manualCodeInput" placeholder="Test için manuel kod gir"><button class="secondary" id="manualBtn" type="button">Manuel Oku</button></div>
+        </div>
+      </section>
+
+      <section class="panel right-col">
+        <div class="panel-head"><h2>Ayrıştırılmış Sonuçlar</h2><button class="secondary" id="clearListsBtn" type="button">Ekranı Temizle</button></div>
+        <div class="panel-body">
+          <div class="result-columns">
+            <div class="result-box ok"><h3>OK <span id="okCount">0</span></h3><div class="result-list" id="okList"></div></div>
+            <div class="result-box bad"><h3>N.OK <span id="nokCount">0</span></h3><div class="result-list" id="nokList"></div></div>
+            <div class="result-box warn"><h3>Tekrar <span id="duplicateCount">0</span></h3><div class="result-list" id="duplicateList"></div></div>
           </div>
         </div>
-        <div class="camera-actions">
-          <select id="resolutionSelect">
-            <option value="1920x1080" selected>Full HD</option>
-            <option value="1280x720">HD</option>
-            <option value="3840x2160">4K dene</option>
-          </select>
-          <button id="startCameraBtn" type="button">Kamerayı Başlat</button>
-          <button class="secondary" id="stopCameraBtn" type="button">Durdur</button>
-          <button class="danger" id="reloadAppBtn" type="button">Paneli Yenile</button>
-        </div>
       </section>
-
-      <section class="app-panel">
-        <iframe
-          id="appFrame"
-          src="https://script.google.com/macros/s/AKfycbwuGznnJeajTU_1AfD8fpP6ikGeKNEORHBJwt32IW_hvup0rL6IQxX3aadqVdhTHP5N/exec"
-          allow="camera; microphone; clipboard-read; clipboard-write"
-          referrerpolicy="no-referrer-when-downgrade"
-        ></iframe>
-      </section>
-    </section>
-  </main>
-
-  <div class="notice" id="notice">
-    <div class="notice-card" id="noticeCard"></div>
+    </main>
   </div>
+
+  <div class="notice" id="notice"><div class="notice-card" id="noticeCard"></div></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@sec-ant/barcode-detector@1.3.3/dist/iife/pure.min.js"></script>
   <script>
-    const video = document.getElementById('video');
-    const overlay = document.getElementById('overlay');
-    const empty = document.getElementById('empty');
-    const statusPill = document.getElementById('statusPill');
-    const enginePill = document.getElementById('enginePill');
-    const appFrame = document.getElementById('appFrame');
-    const resolutionSelect = document.getElementById('resolutionSelect');
-    const startCameraBtn = document.getElementById('startCameraBtn');
-    const stopCameraBtn = document.getElementById('stopCameraBtn');
-    const reloadAppBtn = document.getElementById('reloadAppBtn');
-    const notice = document.getElementById('notice');
-    const noticeCard = document.getElementById('noticeCard');
-
+    const API_URL = 'https://script.google.com/macros/s/AKfycbwuGznnJeajTU_1AfD8fpP6ikGeKNEORHBJwt32IW_hvup0rL6IQxX3aadqVdhTHP5N/exec';
+    const $ = id => document.getElementById(id);
     const state = {
+      activeJob: null,
+      codeIndex: new Map(),
       stream: null,
       detector: null,
-      engine: '',
+      detectorEngine: '',
       scanning: false,
       processing: false,
-      recent: new Map()
+      committing: false,
+      currentCartonNo: 1,
+      currentCarton: [],
+      cycleEvents: [],
+      okList: [],
+      nokList: [],
+      duplicateList: [],
+      recentProblemAt: new Map(),
+      cartonStartedAt: null,
+      deviceId: getDeviceId()
+    };
+    const els = {
+      importBtn: $('importBtn'), importProgress: $('importProgress'), importStatus: $('importStatus'),
+      enginePill: $('enginePill'), jobPill: $('jobPill'), readyPill: $('readyPill'), scanStatePill: $('scanStatePill'),
+      video: $('video'), overlay: $('overlay'), cameraEmpty: $('cameraEmpty'),
+      startBtn: $('startBtn'), stopBtn: $('stopBtn'), resetCartonBtn: $('resetCartonBtn'), resolutionSelect: $('resolutionSelect'),
+      cartonNoMetric: $('cartonNoMetric'), cartonFillMetric: $('cartonFillMetric'), durationMetric: $('durationMetric'), indexMetric: $('indexMetric'),
+      currentSlots: $('currentSlots'), manualCodeInput: $('manualCodeInput'), manualBtn: $('manualBtn'),
+      okList: $('okList'), nokList: $('nokList'), duplicateList: $('duplicateList'),
+      okCount: $('okCount'), nokCount: $('nokCount'), duplicateCount: $('duplicateCount'), clearListsBtn: $('clearListsBtn'),
+      notice: $('notice'), noticeCard: $('noticeCard')
     };
 
-    startCameraBtn.addEventListener('click', startCamera);
-    stopCameraBtn.addEventListener('click', stopCamera);
-    reloadAppBtn.addEventListener('click', () => {
-      appFrame.src = appFrame.src;
-      showNotice('Panel yenileniyor.');
-    });
+    document.addEventListener('DOMContentLoaded', init);
 
-    window.addEventListener('message', event => {
-      const data = event.data;
-      if (!data || typeof data !== 'object') return;
-      if (data.type === 'DM_START_CAMERA_REQUEST') {
-        startCamera(data.width, data.height);
-      }
-      if (data.type === 'DM_STOP_CAMERA_REQUEST') {
-        stopCamera();
-      }
-    });
+    function init() {
+      els.importBtn.addEventListener('click', importCodes);
+      els.startBtn.addEventListener('click', startScanner);
+      els.stopBtn.addEventListener('click', stopScanner);
+      els.resetCartonBtn.addEventListener('click', () => resetCurrentCarton(true));
+      els.manualBtn.addEventListener('click', () => {
+        const code = els.manualCodeInput.value.trim();
+        if (!code) return;
+        handleCode(code, true);
+        els.manualCodeInput.value = '';
+      });
+      els.manualCodeInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter') els.manualBtn.click();
+      });
+      els.clearListsBtn.addEventListener('click', () => {
+        state.okList = [];
+        state.nokList = [];
+        state.duplicateList = [];
+        renderResultLists();
+      });
+      renderAll();
+    }
 
-    async function startCamera(requestedWidth, requestedHeight) {
+    async function importCodes() {
       try {
-        await stopCamera(false);
-        const [selectedWidth, selectedHeight] = resolutionSelect.value.split('x').map(Number);
-        const width = Number(requestedWidth) || selectedWidth || 1280;
-        const height = Number(requestedHeight) || selectedHeight || 720;
-        setStatus('Kamera açılıyor', '');
-        state.stream = await openStream(width, height);
-        video.srcObject = state.stream;
-        await video.play();
+        setBusy(true, 'Kodlar okunuyor...');
+        const text = await readImportText();
+        const parsed = parseCodes(text);
+        if (!parsed.codes.length) {
+          showNotice('Yüklenecek kod bulunamadı.', 'warn');
+          return;
+        }
+
+        const cartonSize = Math.max(1, Number($('cartonSizeInput').value || 24));
+        const jobId = makeJobId();
+        const job = {
+          jobId,
+          customer: $('customerInput').value.trim(),
+          orderNo: $('orderInput').value.trim(),
+          productName: $('productInput').value.trim(),
+          cartonSize,
+          totalCodes: parsed.codes.length,
+          cartonCount: 0
+        };
+
+        state.activeJob = job;
+        state.currentCartonNo = 1;
+        state.codeIndex.clear();
+        parsed.codes.forEach(code => state.codeIndex.set(code, { status: 'PENDING', cartonNo: '' }));
+        resetCurrentCarton(false);
+        renderAll();
+
+        await postApi({ action: 'createJob', payload: { ...job, importDuplicates: parsed.duplicates } });
+
+        const chunkSize = 500;
+        let uploaded = 0;
+        for (let start = 0; start < parsed.codes.length; start += chunkSize) {
+          const chunk = parsed.codes.slice(start, start + chunkSize);
+          await postApi({ action: 'appendCodesChunk', jobId, codes: chunk, stats: { duplicates: 0 } });
+          uploaded += chunk.length;
+          setImportProgress(uploaded / parsed.codes.length, `${uploaded.toLocaleString('tr-TR')} / ${parsed.codes.length.toLocaleString('tr-TR')} tekil kod yüklendi`);
+        }
+        await postApi({ action: 'finalizeImport', jobId });
+
+        const skipped = parsed.suspectFragments ? ` | ${parsed.suspectFragments.toLocaleString('tr-TR')} kısa parça atlandı` : '';
+        showNotice(`Kod datası hazır: ${parsed.codes.length.toLocaleString('tr-TR')} tekil kod${skipped}`, 'ok');
+      } catch (error) {
+        showNotice(error.message || String(error), 'bad');
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function readImportText() {
+      const file = $('fileInput').files && $('fileInput').files[0];
+      if (file) return await file.text();
+      return $('codesText').value || '';
+    }
+
+    function parseCodes(text) {
+      const seen = new Set();
+      const codes = [];
+      let duplicates = 0;
+      let suspectFragments = 0;
+      String(text || '').replace(/^\uFEFF/, '').split(/\r\n|\n|\r/).forEach((line, index) => {
+        const code = normalizeImportedCode(line);
+        if (!code) return;
+        if (index === 0 && /^code|kod|datamatrix|qr$/i.test(code)) return;
+        if (isSuspectPartialCode(code)) {
+          suspectFragments += 1;
+          return;
+        }
+        if (seen.has(code)) {
+          duplicates += 1;
+          return;
+        }
+        seen.add(code);
+        codes.push(code);
+      });
+      return { codes, duplicates, suspectFragments };
+    }
+
+    function normalizeImportedCode(line) {
+      let code = String(line || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+      if (!code) return '';
+      if (code.includes('\t')) code = code.split('\t').map(part => part.trim()).find(Boolean) || '';
+      if (code.length >= 2 && code[0] === '"' && code[code.length - 1] === '"') {
+        code = code.slice(1, -1).replace(/""/g, '"').trim();
+      }
+      return code;
+    }
+
+    function isSuspectPartialCode(code) {
+      return /^01\d{10,}/.test(code) && code.length < 36 && !/91/i.test(code);
+    }
+
+    async function startScanner() {
+      if (!state.activeJob) {
+        showNotice('Önce müşteri kod datasını yüklemelisin.', 'warn');
+        return;
+      }
+      if (!state.codeIndex.size) {
+        showNotice('Kod indeksi yüklenmeden tarama başlatılamaz.', 'warn');
+        return;
+      }
+      try {
+        await stopScanner(false);
+        const [width, height] = els.resolutionSelect.value.split('x').map(Number);
+        state.stream = await openCameraStream(width, height);
+        els.video.srcObject = state.stream;
+        await els.video.play();
         state.detector = await createDetector();
         state.scanning = true;
-        empty.style.display = 'none';
-        setStatus('Kamera aktif', state.engine);
-        sendToApp({ type: 'DM_CAMERA_READY', engine: state.engine });
+        state.cartonStartedAt = state.cartonStartedAt || Date.now();
+        els.cameraEmpty.style.display = 'none';
+        renderAll();
         scanLoop();
+        showNotice('Kamera açık, çoklu okuma başladı.', 'ok');
       } catch (error) {
-        const message = cameraErrorMessage(error);
-        setStatus('Kamera hatası', '');
-        empty.style.display = 'grid';
-        empty.innerHTML = '<div><strong>Kamera açılamadı</strong>' + escapeHtml(message) + '</div>';
-        sendToApp({ type: 'DM_CAMERA_ERROR', message });
-        showNotice(message, 'bad');
+        showNotice(getCameraErrorMessage(error), 'bad');
+        await stopScanner(false);
       }
     }
 
-    async function stopCamera(showMessage = true) {
-      state.scanning = false;
-      state.processing = false;
-      if (state.stream) {
-        state.stream.getTracks().forEach(track => track.stop());
-      }
-      state.stream = null;
-      state.detector = null;
-      video.srcObject = null;
-      clearOverlay();
-      empty.style.display = 'grid';
-      empty.innerHTML = '<div><strong>Kamerayı başlat</strong>Kod datasını alttaki panelden yükle, sonra Başlat ile okut.</div>';
-      setStatus('Hazır', state.engine || '');
-      if (showMessage) showNotice('Kamera durduruldu.');
-    }
-
-    async function openStream(width, height) {
+    async function openCameraStream(width, height) {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Bu tarayıcı kamera erişimini desteklemiyor. Chrome veya Safari ile HTTPS linkini aç.');
       }
-
       const attempts = [
         { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: width }, height: { ideal: height } } },
         { audio: false, video: { facingMode: { ideal: 'environment' } } },
         { audio: false, video: true }
       ];
-
       let lastError = null;
       for (const constraints of attempts) {
         try {
@@ -406,42 +505,29 @@
           const supported = BarcodeDetector.getSupportedFormats ? await BarcodeDetector.getSupportedFormats() : requested;
           const formats = requested.filter(format => supported.includes(format));
           if (formats.length) {
-            state.engine = 'Native BarcodeDetector';
+            state.detectorEngine = 'Native BarcodeDetector';
             return new BarcodeDetector({ formats });
           }
         } catch (error) {}
       }
-
       if (window.BarcodeDetectionAPI && window.BarcodeDetectionAPI.BarcodeDetector) {
-        state.engine = 'ZXing WASM';
+        state.detectorEngine = 'ZXing WASM';
         return new window.BarcodeDetectionAPI.BarcodeDetector({ formats: requested });
       }
-
       throw new Error('DataMatrix okuma motoru başlatılamadı.');
     }
 
     async function scanLoop() {
-      if (!state.scanning || !state.detector || state.processing) {
-        if (state.scanning) requestAnimationFrame(scanLoop);
+      if (!state.scanning || !state.detector || state.committing) return;
+      if (state.processing || els.video.readyState < 2) {
+        requestAnimationFrame(scanLoop);
         return;
       }
-
       state.processing = true;
       try {
-        const detections = await state.detector.detect(video);
+        const detections = await state.detector.detect(els.video);
         drawOverlay(detections || []);
-        const codes = [];
-        const now = Date.now();
-        (detections || []).forEach(detection => {
-          const code = String(detection.rawValue || '').trim();
-          if (!code) return;
-          if (state.recent.has(code) && now - state.recent.get(code) < 900) return;
-          state.recent.set(code, now);
-          codes.push(code);
-        });
-        if (codes.length) {
-          sendToApp({ type: 'DM_SCANNED_CODES', codes });
-        }
+        (detections || []).forEach(detection => handleCode(detection.rawValue, false));
       } catch (error) {
       } finally {
         state.processing = false;
@@ -449,84 +535,263 @@
       }
     }
 
-    function drawOverlay(detections) {
-      if (!video.videoWidth || !video.videoHeight) return;
-      if (overlay.width !== video.videoWidth || overlay.height !== video.videoHeight) {
-        overlay.width = video.videoWidth;
-        overlay.height = video.videoHeight;
+    function handleCode(rawCode, manual) {
+      const code = String(rawCode || '').trim();
+      if (!code || state.committing) return;
+      const indexed = state.codeIndex.get(code);
+      if (!indexed) {
+        addProblem(code, 'NOK', 'Müşteri datasında yok', '', manual);
+        return;
       }
-      const ctx = overlay.getContext('2d');
-      ctx.clearRect(0, 0, overlay.width, overlay.height);
-      ctx.lineWidth = Math.max(3, overlay.width / 480);
-      ctx.strokeStyle = '#5eead4';
-      ctx.fillStyle = 'rgba(20,184,166,.14)';
+      if (indexed.status === 'PACKED') {
+        addProblem(code, 'DUPLICATE', 'Daha önce kutulandı', indexed.cartonNo || '', manual);
+        return;
+      }
+      if (state.currentCarton.some(item => item.code === code)) {
+        addProblem(code, 'DUPLICATE', 'Aynı koli içinde tekrar okundu', state.currentCartonNo, manual);
+        return;
+      }
+      state.currentCarton.push({ code });
+      state.cycleEvents.push({ code, result: 'OK' });
+      state.okList.unshift({ code, note: `Koli ${state.currentCartonNo}` });
+      state.okList = state.okList.slice(0, 80);
+      beep('ok');
+      renderAll();
+      const expected = Number(state.activeJob.cartonSize) || 1;
+      if (state.currentCarton.length >= expected) commitCurrentCarton();
+    }
+
+    function addProblem(code, result, reason, sourceCarton, manual) {
+      const key = `${result}:${code}`;
+      const now = Date.now();
+      if (!manual && state.recentProblemAt.has(key) && now - state.recentProblemAt.get(key) < 1800) return;
+      state.recentProblemAt.set(key, now);
+      state.cycleEvents.push({ code, result });
+      if (result === 'NOK') {
+        state.nokList.unshift({ code, note: reason });
+        state.nokList = state.nokList.slice(0, 80);
+        beep('bad');
+      } else {
+        state.duplicateList.unshift({ code, note: sourceCarton ? `${reason} | Koli ${sourceCarton}` : reason });
+        state.duplicateList = state.duplicateList.slice(0, 80);
+        beep('warn');
+      }
+      renderResultLists();
+    }
+
+    async function commitCurrentCarton() {
+      if (state.committing || !state.activeJob) return;
+      state.committing = true;
+      const wasScanning = state.scanning;
+      state.scanning = false;
+      try {
+        const startedAt = state.cartonStartedAt || Date.now();
+        const durationSeconds = Math.round(((Date.now() - startedAt) / 1000) * 10) / 10;
+        const scans = compactCycleEvents();
+        await postApi({
+          action: 'commitCarton',
+          payload: {
+            jobId: state.activeJob.jobId,
+            expectedQty: Number(state.activeJob.cartonSize) || state.currentCarton.length,
+            scans,
+            startedAt: new Date(startedAt).toISOString(),
+            durationSeconds,
+            deviceId: state.deviceId,
+            engine: state.detectorEngine
+          }
+        });
+
+        state.currentCarton.forEach(item => {
+          const indexed = state.codeIndex.get(item.code);
+          if (indexed) {
+            indexed.status = 'PACKED';
+            indexed.cartonNo = state.currentCartonNo;
+          }
+        });
+
+        const completedCarton = state.currentCartonNo;
+        state.currentCartonNo += 1;
+        state.currentCarton = [];
+        state.cycleEvents = [];
+        state.cartonStartedAt = Date.now();
+        els.durationMetric.textContent = `${durationSeconds.toFixed(1)}s`;
+        renderAll();
+        showNotice(`${completedCarton}. koli kaydedildi.`, 'ok');
+      } catch (error) {
+        showNotice('Koli kaydedilemedi: ' + (error.message || String(error)), 'bad');
+      } finally {
+        state.committing = false;
+        if (wasScanning && state.stream) {
+          state.scanning = true;
+          scanLoop();
+        }
+      }
+    }
+
+    function compactCycleEvents() {
+      const map = new Map();
+      state.cycleEvents.forEach(event => {
+        const key = `${event.result}:${event.code}`;
+        if (!map.has(key)) map.set(key, { code: event.code, rowNumber: 0 });
+      });
+      return Array.from(map.values());
+    }
+
+    async function stopScanner(showMessage = true) {
+      state.scanning = false;
+      state.processing = false;
+      if (state.stream) state.stream.getTracks().forEach(track => track.stop());
+      state.stream = null;
+      els.video.srcObject = null;
+      clearOverlay();
+      els.cameraEmpty.style.display = 'grid';
+      renderAll();
+      if (showMessage) showNotice('Tarama durduruldu.', 'warn');
+    }
+
+    function resetCurrentCarton(showMessage) {
+      state.currentCarton = [];
+      state.cycleEvents = [];
+      state.cartonStartedAt = Date.now();
+      renderAll();
+      if (showMessage) showNotice('Aktif koli ekranı sıfırlandı.', 'warn');
+    }
+
+    async function postApi(payload) {
+      await fetch(API_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+        keepalive: false
+      });
+    }
+
+    function drawOverlay(detections) {
+      const canvas = els.overlay;
+      const video = els.video;
+      if (!video.videoWidth || !video.videoHeight) return;
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = Math.max(3, canvas.width / 480);
+      ctx.strokeStyle = '#22c55e';
+      ctx.fillStyle = 'rgba(34,197,94,.12)';
       detections.forEach(item => {
         const box = item.boundingBox;
         if (box) {
           ctx.fillRect(box.x, box.y, box.width, box.height);
           ctx.strokeRect(box.x, box.y, box.width, box.height);
         }
-        if (item.cornerPoints && item.cornerPoints.length) {
-          ctx.beginPath();
-          item.cornerPoints.forEach((point, index) => {
-            if (index === 0) ctx.moveTo(point.x, point.y);
-            else ctx.lineTo(point.x, point.y);
-          });
-          ctx.closePath();
-          ctx.stroke();
-        }
       });
     }
 
     function clearOverlay() {
-      const ctx = overlay.getContext('2d');
-      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      const ctx = els.overlay.getContext('2d');
+      ctx.clearRect(0, 0, els.overlay.width, els.overlay.height);
     }
 
-    function sendToApp(payload) {
-      if (appFrame.contentWindow) {
-        appFrame.contentWindow.postMessage(payload, '*');
+    function renderAll() {
+      els.enginePill.textContent = state.detectorEngine ? `Motor: ${state.detectorEngine}` : 'Motor: bekliyor';
+      els.jobPill.textContent = state.activeJob ? `${state.activeJob.productName || state.activeJob.customer || 'Aktif data'} | ${state.activeJob.cartonSize} adet` : 'Data yok';
+      els.readyPill.textContent = state.committing ? 'Kayıt yapılıyor' : (state.scanning ? 'Tarama aktif' : 'Hazır');
+      els.scanStatePill.textContent = state.scanning ? 'Açık' : 'Kapalı';
+      els.scanStatePill.className = state.scanning ? 'pill ok' : 'pill';
+      els.indexMetric.textContent = state.codeIndex.size.toLocaleString('tr-TR');
+      const size = state.activeJob ? Number(state.activeJob.cartonSize) || 0 : 0;
+      els.cartonNoMetric.textContent = state.activeJob ? state.currentCartonNo : '-';
+      els.cartonFillMetric.textContent = `${state.currentCarton.length}/${size || 0}`;
+      const slots = [];
+      for (let index = 0; index < Math.max(size, state.currentCarton.length); index += 1) {
+        slots.push(`<div class="slot ${state.currentCarton[index] ? 'filled' : ''}">${index + 1}</div>`);
       }
+      els.currentSlots.innerHTML = slots.join('');
+      renderResultLists();
     }
 
-    function setStatus(status, engine) {
-      statusPill.textContent = status;
-      enginePill.textContent = engine || 'Motor bekliyor';
+    function renderResultLists() {
+      renderList(els.okList, state.okList);
+      renderList(els.nokList, state.nokList);
+      renderList(els.duplicateList, state.duplicateList);
+      els.okCount.textContent = state.okList.length;
+      els.nokCount.textContent = state.nokList.length;
+      els.duplicateCount.textContent = state.duplicateList.length;
     }
 
-    function cameraErrorMessage(error) {
+    function renderList(target, rows) {
+      target.innerHTML = rows.length
+        ? rows.map(row => `<div class="code-line">${escapeHtml(row.code)}<small>${escapeHtml(row.note || '')}</small></div>`).join('')
+        : '<div class="hint">Kayıt yok.</div>';
+    }
+
+    function setImportProgress(ratio, text) {
+      const pct = Math.max(0, Math.min(100, Math.round((ratio || 0) * 100)));
+      els.importProgress.style.width = `${pct}%`;
+      els.importStatus.textContent = text || '';
+    }
+
+    function setBusy(isBusy, text) {
+      els.importBtn.disabled = isBusy;
+      if (text) els.importStatus.textContent = text;
+    }
+
+    function getCameraErrorMessage(error) {
       const name = error && error.name ? error.name : '';
       const message = error && error.message ? error.message : String(error || '');
-      if (name === 'NotAllowedError' || name === 'SecurityError' || /permission|denied/i.test(message)) {
-        return 'Kamera izni reddedildi. Bu sayfanın adres çubuğundaki kilit simgesinden Kamera > İzin ver seçip sayfayı yenile.';
-      }
-      if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-        return 'Kamera bulunamadı. Cihaz kamerasını veya tarayıcı izinlerini kontrol et.';
-      }
-      if (name === 'NotReadableError' || name === 'TrackStartError') {
-        return 'Kamera başka bir uygulama tarafından kullanılıyor olabilir. Diğer kamera uygulamalarını kapatıp tekrar dene.';
-      }
-      if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
-        return 'Seçilen çözünürlük desteklenmedi. HD seçip tekrar dene.';
-      }
+      if (name === 'NotAllowedError' || name === 'SecurityError' || /permission|denied/i.test(message)) return 'Kamera izni reddedildi. Bu sayfanın adres çubuğundan Kamera > İzin ver seçip sayfayı yenile.';
+      if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return 'Kamera bulunamadı. Cihaz kamerasını kontrol et.';
+      if (name === 'NotReadableError' || name === 'TrackStartError') return 'Kamera başka bir uygulama tarafından kullanılıyor olabilir.';
+      if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') return 'Seçilen çözünürlük desteklenmedi. HD seçip tekrar dene.';
       return 'Kamera başlatılamadı: ' + message;
     }
 
     function showNotice(message, type) {
-      noticeCard.className = 'notice-card ' + (type || '');
-      noticeCard.textContent = message;
-      notice.classList.add('open');
+      els.noticeCard.className = `notice-card ${type || ''}`;
+      els.noticeCard.textContent = message;
+      els.notice.classList.add('open');
       window.clearTimeout(showNotice.timer);
-      showNotice.timer = window.setTimeout(() => notice.classList.remove('open'), 3200);
+      showNotice.timer = window.setTimeout(() => els.notice.classList.remove('open'), 3400);
+    }
+
+    function beep(type) {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        const ctx = beep.ctx || (beep.ctx = new AudioContext());
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = type === 'ok' ? 880 : (type === 'warn' ? 520 : 220);
+        gain.gain.value = .035;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + .07);
+        if (navigator.vibrate) navigator.vibrate(type === 'ok' ? 20 : 80);
+      } catch (error) {}
+    }
+
+    function makeJobId() {
+      const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+      const suffix = Math.random().toString(16).slice(2, 10).toUpperCase();
+      return `JOB_${stamp}_${suffix}`;
+    }
+
+    function getDeviceId() {
+      const key = 'dm_device_id';
+      let value = localStorage.getItem(key);
+      if (!value) {
+        value = 'DEV_' + Math.random().toString(16).slice(2, 10).toUpperCase();
+        localStorage.setItem(key, value);
+      }
+      return value;
     }
 
     function escapeHtml(value) {
-      return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+      return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
   </script>
 </body>
