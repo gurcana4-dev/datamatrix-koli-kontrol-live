@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DataMatrix Tek Ekran</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #17211b;
+      --muted: #66736c;
+      --line: #dfe5e1;
+      --accent: #0f766e;
+      --accent-soft: #dff5f1;
+      --bad: #b91c1c;
+      --shadow: 0 12px 34px rgba(23, 33, 27, .08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .shell {
+      width: min(1740px, calc(100vw - 18px));
+      margin: 0 auto;
+      padding: 10px 0;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(18px, 2.2vw, 26px);
+      line-height: 1.05;
+    }
+
+    .topbar p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(430px, 44vw) minmax(520px, 1fr);
+      gap: 10px;
+      align-items: stretch;
+      height: calc(100vh - 88px);
+      min-height: 650px;
+    }
+
+    .camera-panel, .app-panel {
+      min-height: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .camera-panel {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .panel-head, .camera-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .camera-actions {
+      border-top: 1px solid var(--line);
+      border-bottom: 0;
+      flex-wrap: wrap;
+    }
+
+    .panel-head strong {
+      font-size: 15px;
+    }
+
+    .stage {
+      position: relative;
+      min-height: 0;
+      background: #050807;
+      overflow: hidden;
+    }
+
+    video, canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    canvas { pointer-events: none; }
+
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      text-align: center;
+      color: rgba(255,255,255,.82);
+      background: rgba(0,0,0,.16);
+    }
+
+    .empty strong {
+      display: block;
+      margin-bottom: 7px;
+      color: #fff;
+      font-size: 18px;
+    }
+
+    button, select {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font: inherit;
+      font-weight: 850;
+    }
+
+    button {
+      background: var(--ink);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #edf1ef;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+
+    button.danger {
+      background: var(--bad);
+    }
+
+    select {
+      min-width: 130px;
+      background: #fff;
+      border: 1px solid var(--line);
+      color: var(--ink);
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+      background: #fff;
+    }
+
+    .notice {
+      position: fixed;
+      left: 50%;
+      bottom: 14px;
+      z-index: 10;
+      width: min(620px, calc(100vw - 24px));
+      transform: translateX(-50%) translateY(18px);
+      opacity: 0;
+      pointer-events: none;
+      transition: .18s ease;
+    }
+
+    .notice.open {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .notice-card {
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      box-shadow: var(--shadow);
+      color: var(--ink);
+      font-weight: 850;
+    }
+
+    .notice-card.bad { border-color: #fecaca; color: var(--bad); }
+
+    @media (max-width: 980px) {
+      .shell {
+        width: calc(100vw - 8px);
+        padding: 4px 0;
+      }
+
+      .topbar {
+        margin-bottom: 6px;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(300px, 42vh) minmax(560px, 1fr);
+        height: auto;
+        min-height: calc(100vh - 72px);
+      }
+
+      .app-panel {
+        height: 720px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>DataMatrix Tek Ekran</h1>
+        <p>Kamera bu sayfada çalışır, Google Sheets kayıtları alttaki panelden yönetilir.</p>
+      </div>
+      <span class="pill" id="statusPill">Hazır</span>
+    </header>
+
+    <section class="layout">
+      <section class="camera-panel">
+        <div class="panel-head">
+          <strong>Canlı Kamera</strong>
+          <span class="pill" id="enginePill">Motor bekliyor</span>
+        </div>
+        <div class="stage">
+          <video id="video" playsinline muted autoplay></video>
+          <canvas id="overlay"></canvas>
+          <div class="empty" id="empty">
+            <div>
+              <strong>Kamerayı başlat</strong>
+              Kod datasını alttaki panelden yükle, sonra Başlat ile okut.
+            </div>
+          </div>
+        </div>
+        <div class="camera-actions">
+          <select id="resolutionSelect">
+            <option value="1920x1080" selected>Full HD</option>
+            <option value="1280x720">HD</option>
+            <option value="3840x2160">4K dene</option>
+          </select>
+          <button id="startCameraBtn" type="button">Kamerayı Başlat</button>
+          <button class="secondary" id="stopCameraBtn" type="button">Durdur</button>
+          <button class="danger" id="reloadAppBtn" type="button">Paneli Yenile</button>
+        </div>
+      </section>
+
+      <section class="app-panel">
+        <iframe
+          id="appFrame"
+          src="https://script.google.com/macros/s/AKfycbwuGznnJeajTU_1AfD8fpP6ikGeKNEORHBJwt32IW_hvup0rL6IQxX3aadqVdhTHP5N/exec"
+          allow="camera; microphone; clipboard-read; clipboard-write"
+          referrerpolicy="no-referrer-when-downgrade"
+        ></iframe>
+      </section>
+    </section>
+  </main>
+
+  <div class="notice" id="notice">
+    <div class="notice-card" id="noticeCard"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@sec-ant/barcode-detector@1.3.3/dist/iife/pure.min.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const empty = document.getElementById('empty');
+    const statusPill = document.getElementById('statusPill');
+    const enginePill = document.getElementById('enginePill');
+    const appFrame = document.getElementById('appFrame');
+    const resolutionSelect = document.getElementById('resolutionSelect');
+    const startCameraBtn = document.getElementById('startCameraBtn');
+    const stopCameraBtn = document.getElementById('stopCameraBtn');
+    const reloadAppBtn = document.getElementById('reloadAppBtn');
+    const notice = document.getElementById('notice');
+    const noticeCard = document.getElementById('noticeCard');
+
+    const state = {
+      stream: null,
+      detector: null,
+      engine: '',
+      scanning: false,
+      processing: false,
+      recent: new Map()
+    };
+
+    startCameraBtn.addEventListener('click', startCamera);
+    stopCameraBtn.addEventListener('click', stopCamera);
+    reloadAppBtn.addEventListener('click', () => {
+      appFrame.src = appFrame.src;
+      showNotice('Panel yenileniyor.');
+    });
+
+    window.addEventListener('message', event => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'DM_START_CAMERA_REQUEST') {
+        startCamera(data.width, data.height);
+      }
+      if (data.type === 'DM_STOP_CAMERA_REQUEST') {
+        stopCamera();
+      }
+    });
+
+    async function startCamera(requestedWidth, requestedHeight) {
+      try {
+        await stopCamera(false);
+        const [selectedWidth, selectedHeight] = resolutionSelect.value.split('x').map(Number);
+        const width = Number(requestedWidth) || selectedWidth || 1280;
+        const height = Number(requestedHeight) || selectedHeight || 720;
+        setStatus('Kamera açılıyor', '');
+        state.stream = await openStream(width, height);
+        video.srcObject = state.stream;
+        await video.play();
+        state.detector = await createDetector();
+        state.scanning = true;
+        empty.style.display = 'none';
+        setStatus('Kamera aktif', state.engine);
+        sendToApp({ type: 'DM_CAMERA_READY', engine: state.engine });
+        scanLoop();
+      } catch (error) {
+        const message = cameraErrorMessage(error);
+        setStatus('Kamera hatası', '');
+        empty.style.display = 'grid';
+        empty.innerHTML = '<div><strong>Kamera açılamadı</strong>' + escapeHtml(message) + '</div>';
+        sendToApp({ type: 'DM_CAMERA_ERROR', message });
+        showNotice(message, 'bad');
+      }
+    }
+
+    async function stopCamera(showMessage = true) {
+      state.scanning = false;
+      state.processing = false;
+      if (state.stream) {
+        state.stream.getTracks().forEach(track => track.stop());
+      }
+      state.stream = null;
+      state.detector = null;
+      video.srcObject = null;
+      clearOverlay();
+      empty.style.display = 'grid';
+      empty.innerHTML = '<div><strong>Kamerayı başlat</strong>Kod datasını alttaki panelden yükle, sonra Başlat ile okut.</div>';
+      setStatus('Hazır', state.engine || '');
+      if (showMessage) showNotice('Kamera durduruldu.');
+    }
+
+    async function openStream(width, height) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Bu tarayıcı kamera erişimini desteklemiyor. Chrome veya Safari ile HTTPS linkini aç.');
+      }
+
+      const attempts = [
+        { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: width }, height: { ideal: height } } },
+        { audio: false, video: { facingMode: { ideal: 'environment' } } },
+        { audio: false, video: true }
+      ];
+
+      let lastError = null;
+      for (const constraints of attempts) {
+        try {
+          return await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (error) {
+          lastError = error;
+          if (error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) break;
+        }
+      }
+      throw lastError || new Error('Kamera açılamadı.');
+    }
+
+    async function createDetector() {
+      const requested = ['data_matrix', 'qr_code'];
+      if ('BarcodeDetector' in window) {
+        try {
+          const supported = BarcodeDetector.getSupportedFormats ? await BarcodeDetector.getSupportedFormats() : requested;
+          const formats = requested.filter(format => supported.includes(format));
+          if (formats.length) {
+            state.engine = 'Native BarcodeDetector';
+            return new BarcodeDetector({ formats });
+          }
+        } catch (error) {}
+      }
+
+      if (window.BarcodeDetectionAPI && window.BarcodeDetectionAPI.BarcodeDetector) {
+        state.engine = 'ZXing WASM';
+        return new window.BarcodeDetectionAPI.BarcodeDetector({ formats: requested });
+      }
+
+      throw new Error('DataMatrix okuma motoru başlatılamadı.');
+    }
+
+    async function scanLoop() {
+      if (!state.scanning || !state.detector || state.processing) {
+        if (state.scanning) requestAnimationFrame(scanLoop);
+        return;
+      }
+
+      state.processing = true;
+      try {
+        const detections = await state.detector.detect(video);
+        drawOverlay(detections || []);
+        const codes = [];
+        const now = Date.now();
+        (detections || []).forEach(detection => {
+          const code = String(detection.rawValue || '').trim();
+          if (!code) return;
+          if (state.recent.has(code) && now - state.recent.get(code) < 900) return;
+          state.recent.set(code, now);
+          codes.push(code);
+        });
+        if (codes.length) {
+          sendToApp({ type: 'DM_SCANNED_CODES', codes });
+        }
+      } catch (error) {
+      } finally {
+        state.processing = false;
+        if (state.scanning) requestAnimationFrame(scanLoop);
+      }
+    }
+
+    function drawOverlay(detections) {
+      if (!video.videoWidth || !video.videoHeight) return;
+      if (overlay.width !== video.videoWidth || overlay.height !== video.videoHeight) {
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
+      }
+      const ctx = overlay.getContext('2d');
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      ctx.lineWidth = Math.max(3, overlay.width / 480);
+      ctx.strokeStyle = '#5eead4';
+      ctx.fillStyle = 'rgba(20,184,166,.14)';
+      detections.forEach(item => {
+        const box = item.boundingBox;
+        if (box) {
+          ctx.fillRect(box.x, box.y, box.width, box.height);
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
+        }
+        if (item.cornerPoints && item.cornerPoints.length) {
+          ctx.beginPath();
+          item.cornerPoints.forEach((point, index) => {
+            if (index === 0) ctx.moveTo(point.x, point.y);
+            else ctx.lineTo(point.x, point.y);
+          });
+          ctx.closePath();
+          ctx.stroke();
+        }
+      });
+    }
+
+    function clearOverlay() {
+      const ctx = overlay.getContext('2d');
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+    }
+
+    function sendToApp(payload) {
+      if (appFrame.contentWindow) {
+        appFrame.contentWindow.postMessage(payload, '*');
+      }
+    }
+
+    function setStatus(status, engine) {
+      statusPill.textContent = status;
+      enginePill.textContent = engine || 'Motor bekliyor';
+    }
+
+    function cameraErrorMessage(error) {
+      const name = error && error.name ? error.name : '';
+      const message = error && error.message ? error.message : String(error || '');
+      if (name === 'NotAllowedError' || name === 'SecurityError' || /permission|denied/i.test(message)) {
+        return 'Kamera izni reddedildi. Bu sayfanın adres çubuğundaki kilit simgesinden Kamera > İzin ver seçip sayfayı yenile.';
+      }
+      if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        return 'Kamera bulunamadı. Cihaz kamerasını veya tarayıcı izinlerini kontrol et.';
+      }
+      if (name === 'NotReadableError' || name === 'TrackStartError') {
+        return 'Kamera başka bir uygulama tarafından kullanılıyor olabilir. Diğer kamera uygulamalarını kapatıp tekrar dene.';
+      }
+      if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+        return 'Seçilen çözünürlük desteklenmedi. HD seçip tekrar dene.';
+      }
+      return 'Kamera başlatılamadı: ' + message;
+    }
+
+    function showNotice(message, type) {
+      noticeCard.className = 'notice-card ' + (type || '');
+      noticeCard.textContent = message;
+      notice.classList.add('open');
+      window.clearTimeout(showNotice.timer);
+      showNotice.timer = window.setTimeout(() => notice.classList.remove('open'), 3200);
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+</body>
+</html>
