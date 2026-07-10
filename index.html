@@ -390,7 +390,13 @@
         let uploaded = 0;
         const chunks = makeUploadChunks(parsed.codes);
         for (const chunk of chunks) {
-          await apiCall({ action: 'appendCodesChunk', jobId, codes: chunk, stats: { duplicates: 0 } });
+          const uploadInfo = await apiCall({ action: 'appendCodesChunk', jobId, codes: chunk, stats: { duplicates: 0 } });
+          if (uploadInfo && uploadInfo.startRow) {
+            chunk.forEach((code, index) => {
+              const indexed = state.codeIndex.get(code);
+              if (indexed) indexed.rowNumber = Number(uploadInfo.startRow) + index;
+            });
+          }
           uploaded += chunk.length;
           setImportProgress(uploaded / parsed.codes.length, `${uploaded.toLocaleString('tr-TR')} / ${parsed.codes.length.toLocaleString('tr-TR')} tekil kod yüklendi`);
         }
@@ -556,8 +562,8 @@
         addProblem(code, 'DUPLICATE', 'Aynı koli içinde tekrar okundu', state.currentCartonNo, manual);
         return;
       }
-      state.currentCarton.push({ code });
-      state.cycleEvents.push({ code, result: 'OK' });
+      state.currentCarton.push({ code, rowNumber: indexed.rowNumber || 0 });
+      state.cycleEvents.push({ code, rowNumber: indexed.rowNumber || 0, result: 'OK' });
       state.okList.unshift({ code, note: `Koli ${state.currentCartonNo}` });
       state.okList = state.okList.slice(0, 80);
       beep('ok');
@@ -593,7 +599,7 @@
         const startedAt = state.cartonStartedAt || Date.now();
         const durationSeconds = Math.round(((Date.now() - startedAt) / 1000) * 10) / 10;
         const scans = compactCycleEvents();
-        await apiCall({
+        const response = await apiCall({
           action: 'commitCarton',
           payload: {
             jobId: state.activeJob.jobId,
@@ -605,23 +611,27 @@
             engine: state.detectorEngine
           }
         });
+        if (!response || !response.cartonNo) {
+          throw new Error('Koli kaydı yapıldı ancak backend cevabı alınamadı.');
+        }
 
         state.currentCarton.forEach(item => {
           const indexed = state.codeIndex.get(item.code);
           if (indexed) {
             indexed.status = 'PACKED';
-            indexed.cartonNo = state.currentCartonNo;
+            indexed.cartonNo = response.cartonNo;
           }
         });
 
-        const completedCarton = state.currentCartonNo;
-        state.currentCartonNo += 1;
+        const completedCarton = response.cartonNo;
+        state.activeJob = response.job || state.activeJob;
+        state.currentCartonNo = response.nextCartonNo || (completedCarton + 1);
         state.currentCarton = [];
         state.cycleEvents = [];
         state.cartonStartedAt = Date.now();
         els.durationMetric.textContent = `${durationSeconds.toFixed(1)}s`;
         renderAll();
-        showNotice(`${completedCarton}. koli kaydedildi.`, 'ok');
+        showNotice(`${completedCarton}. koli kaydedildi: ${response.okQty}/${response.expectedQty} OK`, response.status === 'COMPLETE' ? 'ok' : 'warn');
       } catch (error) {
         showNotice('Koli kaydedilemedi: ' + (error.message || String(error)), 'bad');
       } finally {
@@ -637,7 +647,7 @@
       const map = new Map();
       state.cycleEvents.forEach(event => {
         const key = `${event.result}:${event.code}`;
-        if (!map.has(key)) map.set(key, { code: event.code, rowNumber: 0 });
+        if (!map.has(key)) map.set(key, { code: event.code, rowNumber: event.rowNumber || 0 });
       });
       return Array.from(map.values());
     }
