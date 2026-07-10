@@ -441,7 +441,13 @@
       if (code.length >= 2 && code[0] === '"' && code[code.length - 1] === '"') {
         code = code.slice(1, -1).replace(/""/g, '"').trim();
       }
-      return code;
+      return canonicalizeCode(code);
+    }
+
+    function canonicalizeCode(value) {
+      return String(value == null ? '' : value)
+        .replace(/[\u0009-\u000D\u001C-\u001F\u0020\u00A0\u1680\u180E\u2000-\u200D\u2028\u2029\u202F\u205F\u2060\u241D\uFEFF]+/g, '')
+        .trim();
     }
 
     function isSuspectPartialCode(code) {
@@ -535,7 +541,7 @@
     }
 
     function handleCode(rawCode, manual) {
-      const code = String(rawCode || '').trim();
+      const code = canonicalizeCode(rawCode);
       if (!code || state.committing) return;
       const indexed = state.codeIndex.get(code);
       if (!indexed) {
