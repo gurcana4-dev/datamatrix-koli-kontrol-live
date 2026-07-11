@@ -159,7 +159,8 @@
       background: rgba(0,0,0,.16);
     }
     .camera-empty strong { display: block; margin-bottom: 7px; color: #fff; font-size: 18px; }
-    .scanner-controls, .carton-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+    .scanner-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+    .carton-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
     .scanner-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
     .metric { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfb; }
     .metric span { display: block; color: var(--muted); font-size: 11px; font-weight: 850; text-transform: uppercase; }
@@ -270,6 +271,7 @@
             <button class="accent" id="startBtn" type="button">Başlat</button>
             <button class="secondary" id="stopBtn" type="button">Durdur</button>
             <button class="secondary" id="resetCartonBtn" type="button">Koli Sıfırla</button>
+            <button class="secondary" id="closeCartonBtn" type="button">Koli Kapat / Gönder</button>
           </div>
           <div class="scanner-options">
             <div>
@@ -348,7 +350,7 @@
       importBtn: $('importBtn'), importProgress: $('importProgress'), importStatus: $('importStatus'),
       enginePill: $('enginePill'), jobPill: $('jobPill'), readyPill: $('readyPill'), scanStatePill: $('scanStatePill'),
       video: $('video'), overlay: $('overlay'), cameraEmpty: $('cameraEmpty'),
-      startBtn: $('startBtn'), stopBtn: $('stopBtn'), resetCartonBtn: $('resetCartonBtn'), resolutionSelect: $('resolutionSelect'),
+      startBtn: $('startBtn'), stopBtn: $('stopBtn'), resetCartonBtn: $('resetCartonBtn'), closeCartonBtn: $('closeCartonBtn'), resolutionSelect: $('resolutionSelect'),
       scanModeSelect: $('scanModeSelect'), guideSelect: $('guideSelect'),
       cartonNoMetric: $('cartonNoMetric'), cartonFillMetric: $('cartonFillMetric'), durationMetric: $('durationMetric'), indexMetric: $('indexMetric'),
       currentSlots: $('currentSlots'), manualCodeInput: $('manualCodeInput'), manualBtn: $('manualBtn'),
@@ -364,6 +366,7 @@
       els.startBtn.addEventListener('click', startScanner);
       els.stopBtn.addEventListener('click', stopScanner);
       els.resetCartonBtn.addEventListener('click', () => resetCurrentCarton(true));
+      els.closeCartonBtn.addEventListener('click', closeCurrentCartonManually);
       els.scanModeSelect.addEventListener('change', () => {
         state.scanMode = els.scanModeSelect.value;
         state.scanFallback = false;
@@ -624,6 +627,19 @@
       if (state.currentCarton.length >= expected) commitCurrentCarton();
     }
 
+    function closeCurrentCartonManually() {
+      if (!state.activeJob) {
+        showNotice('Önce müşteri kod datasını yüklemelisin.', 'warn');
+        return;
+      }
+      if (state.committing) return;
+      if (!state.currentCarton.length) {
+        showNotice('Kapatılacak koli içinde OK kod yok.', 'warn');
+        return;
+      }
+      commitCurrentCarton(true);
+    }
+
     function addProblem(code, result, reason, sourceCarton, manual) {
       const key = `${result}:${code}`;
       const now = Date.now();
@@ -642,7 +658,7 @@
       renderResultLists();
     }
 
-    async function commitCurrentCarton() {
+    async function commitCurrentCarton(manualClose = false) {
       if (state.committing || !state.activeJob) return;
       state.committing = true;
       const wasScanning = state.scanning;
@@ -684,7 +700,11 @@
         state.cartonStartedAt = Date.now();
         els.durationMetric.textContent = `${durationSeconds.toFixed(1)}s`;
         renderAll();
-        showNotice(`${completedCarton}. koli kaydedildi: ${response.okQty}/${response.expectedQty} OK`, response.status === 'COMPLETE' ? 'ok' : 'warn');
+        const isPartial = response.status !== 'COMPLETE' || response.okQty < response.expectedQty;
+        const message = manualClose && isPartial
+          ? `${completedCarton}. koli eksik/fire kapatıldı: ${response.okQty}/${response.expectedQty} OK`
+          : `${completedCarton}. koli kaydedildi: ${response.okQty}/${response.expectedQty} OK`;
+        showNotice(message, isPartial ? 'warn' : 'ok');
       } catch (error) {
         showNotice('Koli kaydedilemedi: ' + (error.message || String(error)), 'bad');
       } finally {
@@ -1036,6 +1056,7 @@
       els.scanStatePill.textContent = state.scanning ? 'Açık' : 'Kapalı';
       els.scanStatePill.className = state.scanning ? 'pill ok' : 'pill';
       els.indexMetric.textContent = state.codeIndex.size.toLocaleString('tr-TR');
+      els.closeCartonBtn.disabled = !state.activeJob || state.committing || !state.currentCarton.length;
       const size = state.activeJob ? Number(state.activeJob.cartonSize) || 0 : 0;
       els.cartonNoMetric.textContent = state.activeJob ? state.currentCartonNo : '-';
       els.cartonFillMetric.textContent = `${state.currentCarton.length}/${size || 0}`;
