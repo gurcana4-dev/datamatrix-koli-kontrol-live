@@ -316,6 +316,7 @@
       nokList: [],
       duplicateList: [],
       recentProblemAt: new Map(),
+      overlayMarks: new Map(),
       cartonStartedAt: null,
       deviceId: getDeviceId()
     };
@@ -341,7 +342,7 @@
       els.manualBtn.addEventListener('click', () => {
         const code = els.manualCodeInput.value.trim();
         if (!code) return;
-        handleCode(code, true);
+        handleCode(code, null, true);
         els.manualCodeInput.value = '';
       });
       els.manualCodeInput.addEventListener('keydown', event => {
@@ -537,8 +538,8 @@
       state.processing = true;
       try {
         const detections = await state.detector.detect(els.video);
+        (detections || []).forEach(detection => handleCode(detection.rawValue, detection, false));
         drawOverlay(detections || []);
-        (detections || []).forEach(detection => handleCode(detection.rawValue, false));
       } catch (error) {
       } finally {
         state.processing = false;
@@ -546,24 +547,27 @@
       }
     }
 
-    function handleCode(rawCode, manual) {
+    function handleCode(rawCode, detection, manual) {
       const code = canonicalizeCode(rawCode);
       if (!code || state.committing) return;
       const indexed = state.codeIndex.get(code);
       if (!indexed) {
+        rememberOverlayMark(code, detection, 'NOK', 'N.OK');
         addProblem(code, 'NOK', 'Müşteri datasında yok', '', manual);
         return;
       }
       if (indexed.status === 'PACKED') {
+        rememberOverlayMark(code, detection, 'DUPLICATE', 'TEKRAR');
         addProblem(code, 'DUPLICATE', 'Daha önce kutulandı', indexed.cartonNo || '', manual);
         return;
       }
       if (state.currentCarton.some(item => item.code === code)) {
-        addProblem(code, 'DUPLICATE', 'Aynı koli içinde tekrar okundu', state.currentCartonNo, manual);
+        rememberOverlayMark(code, detection, 'OK', 'OK');
         return;
       }
       state.currentCarton.push({ code, rowNumber: indexed.rowNumber || 0 });
       state.cycleEvents.push({ code, rowNumber: indexed.rowNumber || 0, result: 'OK' });
+      rememberOverlayMark(code, detection, 'OK', 'OK');
       state.okList.unshift({ code, note: `Koli ${state.currentCartonNo}` });
       state.okList = state.okList.slice(0, 80);
       beep('ok');
@@ -628,6 +632,7 @@
         state.currentCartonNo = response.nextCartonNo || (completedCarton + 1);
         state.currentCarton = [];
         state.cycleEvents = [];
+        state.overlayMarks.clear();
         state.cartonStartedAt = Date.now();
         els.durationMetric.textContent = `${durationSeconds.toFixed(1)}s`;
         renderAll();
@@ -667,7 +672,9 @@
     function resetCurrentCarton(showMessage) {
       state.currentCarton = [];
       state.cycleEvents = [];
+      state.overlayMarks.clear();
       state.cartonStartedAt = Date.now();
+      clearOverlay();
       renderAll();
       if (showMessage) showNotice('Aktif koli ekranı sıfırlandı.', 'warn');
     }
@@ -723,6 +730,41 @@
       });
     }
 
+    function rememberOverlayMark(code, detection, result, label) {
+      const box = getDetectionBox(detection);
+      if (!box) return;
+      const previous = state.overlayMarks.get(code);
+      if (previous && previous.result === 'OK' && result !== 'OK') return;
+      state.overlayMarks.set(code, {
+        code,
+        result,
+        label,
+        box,
+        updatedAt: Date.now()
+      });
+    }
+
+    function getDetectionBox(detection) {
+      if (!detection) return null;
+      const box = detection.boundingBox;
+      if (box && Number.isFinite(box.x) && Number.isFinite(box.y) && box.width > 0 && box.height > 0) {
+        return { x: box.x, y: box.y, width: box.width, height: box.height };
+      }
+      const points = detection.cornerPoints || detection.rawValueBoundingBox || [];
+      if (!points.length) return null;
+      const xs = points.map(point => Number(point.x)).filter(Number.isFinite);
+      const ys = points.map(point => Number(point.y)).filter(Number.isFinite);
+      if (!xs.length || !ys.length) return null;
+      const left = Math.min(...xs);
+      const top = Math.min(...ys);
+      return {
+        x: left,
+        y: top,
+        width: Math.max(...xs) - left,
+        height: Math.max(...ys) - top
+      };
+    }
+
     function drawOverlay(detections) {
       const canvas = els.overlay;
       const video = els.video;
@@ -733,16 +775,49 @@
       }
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.lineWidth = Math.max(3, canvas.width / 480);
-      ctx.strokeStyle = '#22c55e';
-      ctx.fillStyle = 'rgba(34,197,94,.12)';
-      detections.forEach(item => {
-        const box = item.boundingBox;
-        if (box) {
-          ctx.fillRect(box.x, box.y, box.width, box.height);
-          ctx.strokeRect(box.x, box.y, box.width, box.height);
-        }
+
+      const seenCodes = new Set();
+      (detections || []).forEach(item => {
+        const code = canonicalizeCode(item && item.rawValue);
+        if (code) seenCodes.add(code);
+        if (!code) drawBox(ctx, getDetectionBox(item), 'PENDING', 'OKUNAMADI', true);
       });
+
+      state.overlayMarks.forEach(mark => {
+        drawBox(ctx, mark.box, mark.result, mark.label, seenCodes.has(mark.code));
+      });
+    }
+
+    function drawBox(ctx, box, result, label, isLive) {
+      if (!box) return;
+      const ok = result === 'OK';
+      const color = ok ? '#22c55e' : '#ef4444';
+      const glow = ok ? 'rgba(34,197,94,.18)' : 'rgba(239,68,68,.18)';
+      const lineWidth = Math.max(isLive ? 5 : 4, els.overlay.width / 420);
+      const pad = Math.max(5, lineWidth);
+      const x = Math.max(0, box.x - pad);
+      const y = Math.max(0, box.y - pad);
+      const width = Math.min(els.overlay.width - x, box.width + pad * 2);
+      const height = Math.min(els.overlay.height - y, box.height + pad * 2);
+      ctx.save();
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = color;
+      ctx.fillStyle = glow;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = isLive ? 14 : 8;
+      ctx.fillRect(x, y, width, height);
+      ctx.strokeRect(x, y, width, height);
+      if (label) {
+        ctx.shadowBlur = 0;
+        ctx.font = `${Math.max(18, els.overlay.width / 42)}px Arial`;
+        const labelWidth = ctx.measureText(label).width + 14;
+        const labelHeight = Math.max(24, els.overlay.width / 34);
+        ctx.fillStyle = color;
+        ctx.fillRect(x, Math.max(0, y - labelHeight), labelWidth, labelHeight);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(label, x + 7, Math.max(labelHeight - 7, y - 7));
+      }
+      ctx.restore();
     }
 
     function clearOverlay() {
