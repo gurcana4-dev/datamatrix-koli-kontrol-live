@@ -160,6 +160,7 @@
     }
     .camera-empty strong { display: block; margin-bottom: 7px; color: #fff; font-size: 18px; }
     .scanner-controls, .carton-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+    .scanner-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
     .metric { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfb; }
     .metric span { display: block; color: var(--muted); font-size: 11px; font-weight: 850; text-transform: uppercase; }
     .metric strong { display: block; margin-top: 4px; font-size: 22px; line-height: 1; }
@@ -204,11 +205,11 @@
       .app { width: min(100vw - 8px, 760px); padding-top: 4px; }
       .topbar, .layout { grid-template-columns: 1fr; }
       .status-line { justify-content: flex-start; }
-      .field-grid, .scanner-controls, .carton-strip, .result-columns { grid-template-columns: 1fr 1fr; }
+      .field-grid, .scanner-controls, .scanner-options, .carton-strip, .result-columns { grid-template-columns: 1fr 1fr; }
       .camera-shell { min-height: 48vh; }
     }
     @media (max-width: 520px) {
-      .field-grid, .scanner-controls, .carton-strip, .result-columns, .manual-row { grid-template-columns: 1fr; }
+      .field-grid, .scanner-controls, .scanner-options, .carton-strip, .result-columns, .manual-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -270,6 +271,24 @@
             <button class="secondary" id="stopBtn" type="button">Durdur</button>
             <button class="secondary" id="resetCartonBtn" type="button">Koli Sıfırla</button>
           </div>
+          <div class="scanner-options">
+            <div>
+              <label for="scanModeSelect">Tarama Modu</label>
+              <select id="scanModeSelect">
+                <option value="performance" selected>Performans: rehber + akıllı konum</option>
+                <option value="max">Maksimum: geniş alan + maskeleme</option>
+                <option value="standard">Standart: tam görüntü</option>
+              </select>
+            </div>
+            <div>
+              <label for="guideSelect">Koli Rehberi</label>
+              <select id="guideSelect">
+                <option value="on" selected>Rehber açık</option>
+                <option value="off">Rehber kapalı</option>
+              </select>
+            </div>
+          </div>
+          <p class="hint">Performans modu koli alanını önceliklendirir; okunan konumları maskeleyip kalan kodlara odaklanır.</p>
           <div class="carton-strip">
             <div class="metric"><span>Aktif koli</span><strong id="cartonNoMetric">-</strong></div>
             <div class="metric"><span>Koli doluluk</span><strong id="cartonFillMetric">0/0</strong></div>
@@ -317,6 +336,11 @@
       duplicateList: [],
       recentProblemAt: new Map(),
       overlayMarks: new Map(),
+      scanMode: 'performance',
+      guideEnabled: true,
+      scanCanvas: null,
+      scanContext: null,
+      scanFallback: false,
       cartonStartedAt: null,
       deviceId: getDeviceId()
     };
@@ -325,6 +349,7 @@
       enginePill: $('enginePill'), jobPill: $('jobPill'), readyPill: $('readyPill'), scanStatePill: $('scanStatePill'),
       video: $('video'), overlay: $('overlay'), cameraEmpty: $('cameraEmpty'),
       startBtn: $('startBtn'), stopBtn: $('stopBtn'), resetCartonBtn: $('resetCartonBtn'), resolutionSelect: $('resolutionSelect'),
+      scanModeSelect: $('scanModeSelect'), guideSelect: $('guideSelect'),
       cartonNoMetric: $('cartonNoMetric'), cartonFillMetric: $('cartonFillMetric'), durationMetric: $('durationMetric'), indexMetric: $('indexMetric'),
       currentSlots: $('currentSlots'), manualCodeInput: $('manualCodeInput'), manualBtn: $('manualBtn'),
       okList: $('okList'), nokList: $('nokList'), duplicateList: $('duplicateList'),
@@ -339,6 +364,16 @@
       els.startBtn.addEventListener('click', startScanner);
       els.stopBtn.addEventListener('click', stopScanner);
       els.resetCartonBtn.addEventListener('click', () => resetCurrentCarton(true));
+      els.scanModeSelect.addEventListener('change', () => {
+        state.scanMode = els.scanModeSelect.value;
+        state.scanFallback = false;
+        drawOverlay([]);
+        renderAll();
+      });
+      els.guideSelect.addEventListener('change', () => {
+        state.guideEnabled = els.guideSelect.value === 'on';
+        drawOverlay([]);
+      });
       els.manualBtn.addEventListener('click', () => {
         const code = els.manualCodeInput.value.trim();
         if (!code) return;
@@ -472,6 +507,9 @@
       }
       try {
         await stopScanner(false);
+        state.scanMode = els.scanModeSelect.value || 'performance';
+        state.guideEnabled = els.guideSelect.value !== 'off';
+        state.scanFallback = false;
         const [width, height] = els.resolutionSelect.value.split('x').map(Number);
         state.stream = await openCameraStream(width, height);
         els.video.srcObject = state.stream;
@@ -537,7 +575,17 @@
       }
       state.processing = true;
       try {
-        const detections = await state.detector.detect(els.video);
+        let scanFrame = prepareScanFrame();
+        let rawDetections = [];
+        try {
+          rawDetections = await state.detector.detect(scanFrame.source);
+        } catch (scanError) {
+          if (scanFrame.source === els.video) throw scanError;
+          state.scanFallback = true;
+          scanFrame = getFullScanFrame();
+          rawDetections = await state.detector.detect(els.video);
+        }
+        const detections = normalizeDetections(rawDetections || [], scanFrame);
         (detections || []).forEach(detection => handleCode(detection.rawValue, detection, false));
         drawOverlay(detections || []);
       } catch (error) {
@@ -730,6 +778,123 @@
       });
     }
 
+    function getScanProfile() {
+      const mode = state.scanMode || 'performance';
+      if (mode === 'standard') {
+        return { mode, useRoi: false, maskRemembered: false, guideScaleX: 0.9, guideScaleY: 0.82 };
+      }
+      if (mode === 'max') {
+        return { mode, useRoi: true, maskRemembered: true, guideScaleX: 0.94, guideScaleY: 0.88 };
+      }
+      return { mode: 'performance', useRoi: true, maskRemembered: true, guideScaleX: 0.88, guideScaleY: 0.8 };
+    }
+
+    function prepareScanFrame() {
+      const profile = getScanProfile();
+      if (!profile.useRoi || state.scanFallback) return getFullScanFrame();
+
+      const video = els.video;
+      const guideBox = getGuideBox(video.videoWidth, video.videoHeight, profile);
+      if (!guideBox.width || !guideBox.height) return getFullScanFrame();
+
+      const sourceCanvas = getScanCanvas(Math.round(guideBox.width), Math.round(guideBox.height));
+      const sourceContext = state.scanContext;
+      sourceContext.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+      sourceContext.drawImage(
+        video,
+        guideBox.x,
+        guideBox.y,
+        guideBox.width,
+        guideBox.height,
+        0,
+        0,
+        sourceCanvas.width,
+        sourceCanvas.height
+      );
+      if (profile.maskRemembered) maskRememberedBoxes(sourceContext, guideBox);
+      return {
+        source: sourceCanvas,
+        offsetX: guideBox.x,
+        offsetY: guideBox.y,
+        scaleX: guideBox.width / sourceCanvas.width,
+        scaleY: guideBox.height / sourceCanvas.height
+      };
+    }
+
+    function getFullScanFrame() {
+      return { source: els.video, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1 };
+    }
+
+    function getScanCanvas(width, height) {
+      if (!state.scanCanvas) {
+        state.scanCanvas = document.createElement('canvas');
+        state.scanContext = state.scanCanvas.getContext('2d', { willReadFrequently: false });
+      }
+      const safeWidth = Math.max(1, width);
+      const safeHeight = Math.max(1, height);
+      if (state.scanCanvas.width !== safeWidth) state.scanCanvas.width = safeWidth;
+      if (state.scanCanvas.height !== safeHeight) state.scanCanvas.height = safeHeight;
+      return state.scanCanvas;
+    }
+
+    function getGuideBox(width, height, profile = getScanProfile()) {
+      const guideWidth = Math.round(width * profile.guideScaleX);
+      const guideHeight = Math.round(height * profile.guideScaleY);
+      return {
+        x: Math.round((width - guideWidth) / 2),
+        y: Math.round((height - guideHeight) / 2),
+        width: guideWidth,
+        height: guideHeight
+      };
+    }
+
+    function maskRememberedBoxes(sourceContext, guideBox) {
+      state.overlayMarks.forEach(mark => {
+        const maskBox = intersectBoxes(expandBox(mark.box, 8), guideBox);
+        if (!maskBox) return;
+        sourceContext.fillStyle = '#f8fafc';
+        sourceContext.fillRect(
+          Math.max(0, maskBox.x - guideBox.x),
+          Math.max(0, maskBox.y - guideBox.y),
+          Math.max(1, maskBox.width),
+          Math.max(1, maskBox.height)
+        );
+      });
+    }
+
+    function expandBox(box, padding) {
+      return {
+        x: box.x - padding,
+        y: box.y - padding,
+        width: box.width + padding * 2,
+        height: box.height + padding * 2
+      };
+    }
+
+    function intersectBoxes(firstBox, secondBox) {
+      const left = Math.max(firstBox.x, secondBox.x);
+      const top = Math.max(firstBox.y, secondBox.y);
+      const right = Math.min(firstBox.x + firstBox.width, secondBox.x + secondBox.width);
+      const bottom = Math.min(firstBox.y + firstBox.height, secondBox.y + secondBox.height);
+      if (right <= left || bottom <= top) return null;
+      return { x: left, y: top, width: right - left, height: bottom - top };
+    }
+
+    function normalizeDetections(rawDetections, scanFrame) {
+      return rawDetections.map(detection => {
+        const box = getDetectionBox(detection);
+        return {
+          rawValue: detection.rawValue,
+          boundingBox: box ? {
+            x: scanFrame.offsetX + box.x * scanFrame.scaleX,
+            y: scanFrame.offsetY + box.y * scanFrame.scaleY,
+            width: box.width * scanFrame.scaleX,
+            height: box.height * scanFrame.scaleY
+          } : null
+        };
+      });
+    }
+
     function rememberOverlayMark(code, detection, result, label) {
       const box = getDetectionBox(detection);
       if (!box) return;
@@ -775,6 +940,8 @@
       }
       const ctx = canvas.getContext('2d');
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const profile = getScanProfile();
+      if (state.guideEnabled) drawGuide(ctx, profile);
 
       const seenCodes = new Set();
       (detections || []).forEach(item => {
@@ -786,6 +953,43 @@
       state.overlayMarks.forEach(mark => {
         drawBox(ctx, mark.box, mark.result, mark.label, seenCodes.has(mark.code));
       });
+    }
+
+    function drawGuide(ctx, profile) {
+      const guideBox = getGuideBox(ctx.canvas.width, ctx.canvas.height, profile);
+      const cornerLength = Math.max(34, ctx.canvas.width / 18);
+      const lineWidth = Math.max(3, ctx.canvas.width / 520);
+      ctx.save();
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = 'rgba(250, 204, 21, .95)';
+      ctx.fillStyle = 'rgba(250, 204, 21, .05)';
+      ctx.setLineDash([14, 10]);
+      ctx.fillRect(guideBox.x, guideBox.y, guideBox.width, guideBox.height);
+      ctx.strokeRect(guideBox.x, guideBox.y, guideBox.width, guideBox.height);
+      ctx.setLineDash([]);
+      ctx.lineWidth = lineWidth * 1.6;
+      drawGuideCorner(ctx, guideBox.x, guideBox.y, cornerLength, 1, 1);
+      drawGuideCorner(ctx, guideBox.x + guideBox.width, guideBox.y, cornerLength, -1, 1);
+      drawGuideCorner(ctx, guideBox.x, guideBox.y + guideBox.height, cornerLength, 1, -1);
+      drawGuideCorner(ctx, guideBox.x + guideBox.width, guideBox.y + guideBox.height, cornerLength, -1, -1);
+      const label = profile.useRoi ? 'KOLİ ALANI / AKILLI TARAMA' : 'KOLİ ALANI';
+      ctx.font = `${Math.max(18, ctx.canvas.width / 48)}px Arial`;
+      const labelPadding = 10;
+      const labelHeight = Math.max(28, ctx.canvas.width / 36);
+      const labelWidth = ctx.measureText(label).width + labelPadding * 2;
+      ctx.fillStyle = 'rgba(15, 23, 42, .72)';
+      ctx.fillRect(guideBox.x, Math.max(0, guideBox.y - labelHeight), labelWidth, labelHeight);
+      ctx.fillStyle = '#facc15';
+      ctx.fillText(label, guideBox.x + labelPadding, Math.max(labelHeight - 8, guideBox.y - 8));
+      ctx.restore();
+    }
+
+    function drawGuideCorner(ctx, left, top, length, horizontalDirection, verticalDirection) {
+      ctx.beginPath();
+      ctx.moveTo(left, top + verticalDirection * length);
+      ctx.lineTo(left, top);
+      ctx.lineTo(left + horizontalDirection * length, top);
+      ctx.stroke();
     }
 
     function drawBox(ctx, box, result, label, isLive) {
@@ -826,7 +1030,7 @@
     }
 
     function renderAll() {
-      els.enginePill.textContent = state.detectorEngine ? `Motor: ${state.detectorEngine}` : 'Motor: bekliyor';
+      els.enginePill.textContent = state.detectorEngine ? `Motor: ${state.detectorEngine} | ${getModeLabel()}` : `Motor: bekliyor | ${getModeLabel()}`;
       els.jobPill.textContent = state.activeJob ? `${state.activeJob.productName || state.activeJob.customer || 'Aktif data'} | ${state.activeJob.cartonSize} adet` : 'Data yok';
       els.readyPill.textContent = state.committing ? 'Kayıt yapılıyor' : (state.scanning ? 'Tarama aktif' : 'Hazır');
       els.scanStatePill.textContent = state.scanning ? 'Açık' : 'Kapalı';
@@ -841,6 +1045,12 @@
       }
       els.currentSlots.innerHTML = slots.join('');
       renderResultLists();
+    }
+
+    function getModeLabel() {
+      if (state.scanMode === 'standard') return 'Standart';
+      if (state.scanMode === 'max') return 'Maksimum';
+      return 'Performans';
     }
 
     function renderResultLists() {
