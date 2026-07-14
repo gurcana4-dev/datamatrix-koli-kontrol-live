@@ -241,6 +241,14 @@
       <section class="panel">
         <div class="panel-head"><h2>Müşteri Datası</h2></div>
         <div class="panel-body">
+          <div class="field">
+            <label for="operationModeSelect">Çalışma Modu</label>
+            <select id="operationModeSelect">
+              <option value="compare" selected>Müşteri datası ile kontrol</option>
+              <option value="collect">Datasız okut ve topla</option>
+            </select>
+            <p class="hint" id="operationModeHint">Bu modda yüklenen müşteri kodları ile karşılaştırma yapılır.</p>
+          </div>
           <div class="field-grid">
             <div class="field"><label for="customerInput">Müşteri</label><input id="customerInput" placeholder="Müşteri adı"></div>
             <div class="field"><label for="orderInput">Lot / Parti</label><input id="orderInput" placeholder="Opsiyonel"></div>
@@ -347,6 +355,7 @@
       duplicateList: [],
       recentProblemAt: new Map(),
       overlayMarks: new Map(),
+      operationMode: 'compare',
       scanMode: 'performance',
       guideEnabled: true,
       scanCanvas: null,
@@ -356,6 +365,8 @@
       deviceId: getDeviceId()
     };
     const els = {
+      operationModeSelect: $('operationModeSelect'), operationModeHint: $('operationModeHint'),
+      fileInput: $('fileInput'), codesText: $('codesText'),
       importBtn: $('importBtn'), importProgress: $('importProgress'), importStatus: $('importStatus'),
       enginePill: $('enginePill'), jobPill: $('jobPill'), readyPill: $('readyPill'), scanStatePill: $('scanStatePill'),
       video: $('video'), overlay: $('overlay'), cameraEmpty: $('cameraEmpty'),
@@ -371,6 +382,7 @@
     document.addEventListener('DOMContentLoaded', init);
 
     function init() {
+      els.operationModeSelect.addEventListener('change', updateOperationModeUi);
       els.importBtn.addEventListener('click', importCodes);
       els.startBtn.addEventListener('click', startScanner);
       els.stopBtn.addEventListener('click', stopScanner);
@@ -401,12 +413,18 @@
         state.duplicateList = [];
         renderResultLists();
       });
+      updateOperationModeUi();
       renderAll();
     }
 
     async function importCodes() {
       try {
-        setBusy(true, 'Kodlar okunuyor...');
+        const operationMode = getSelectedOperationMode();
+        setBusy(true, operationMode === 'collect' ? 'Datasız toplama hazırlanıyor...' : 'Kodlar okunuyor...');
+        if (operationMode === 'collect') {
+          await prepareCollectionJob();
+          return;
+        }
         const text = await readImportText();
         const parsed = parseCodes(text);
         if (!parsed.codes.length) {
@@ -422,6 +440,7 @@
           orderNo: $('orderInput').value.trim(),
           productName: $('productInput').value.trim(),
           cartonSize,
+          mode: 'compare',
           totalCodes: parsed.codes.length,
           cartonCount: 0
         };
@@ -457,6 +476,29 @@
       } finally {
         setBusy(false);
       }
+    }
+
+    async function prepareCollectionJob() {
+      const cartonSize = Math.max(1, Number($('cartonSizeInput').value || 24));
+      const jobId = makeJobId();
+      const job = {
+        jobId,
+        customer: $('customerInput').value.trim(),
+        orderNo: $('orderInput').value.trim(),
+        productName: $('productInput').value.trim() || 'Datasız Toplama',
+        cartonSize,
+        mode: 'collect',
+        totalCodes: 0,
+        cartonCount: 0
+      };
+      const response = await apiCall({ action: 'createJob', payload: { ...job, mode: 'collect', importDuplicates: 0 } });
+      state.activeJob = { ...job, ...(response || {}), mode: 'collect' };
+      state.currentCartonNo = 1;
+      state.codeIndex.clear();
+      state.recentProblemAt.clear();
+      resetCurrentCarton(false);
+      setImportProgress(1, 'Datasız toplama modu hazır. Kod dosyası gerekmeden kamera başlatılabilir.');
+      showNotice('Datasız toplama modu hazır.', 'ok');
     }
 
     async function readImportText() {
@@ -509,11 +551,22 @@
     }
 
     async function startScanner() {
+      if (!state.activeJob && getSelectedOperationMode() === 'collect') {
+        try {
+          setBusy(true, 'Datasız toplama hazırlanıyor...');
+          await prepareCollectionJob();
+        } catch (error) {
+          showNotice(error.message || String(error), 'bad');
+          return;
+        } finally {
+          setBusy(false);
+        }
+      }
       if (!state.activeJob) {
-        showNotice('Önce müşteri kod datasını yüklemelisin.', 'warn');
+        showNotice('Önce müşteri kod datasını yükle veya datasız toplama modunu hazırla.', 'warn');
         return;
       }
-      if (!state.codeIndex.size) {
+      if (!isCollectionJob() && !state.codeIndex.size) {
         showNotice('Kod indeksi yüklenmeden tarama başlatılamaz.', 'warn');
         return;
       }
@@ -610,6 +663,10 @@
     function handleCode(rawCode, detection, manual) {
       const code = canonicalizeCode(rawCode);
       if (!code || state.committing) return;
+      if (isCollectionJob()) {
+        handleCollectedCode(code, detection, manual);
+        return;
+      }
       const indexed = state.codeIndex.get(code);
       if (!indexed) {
         rememberOverlayMark(code, detection, 'NOK', 'N.OK');
@@ -636,9 +693,51 @@
       if (state.currentCarton.length >= expected) commitCurrentCarton();
     }
 
+    function handleCollectedCode(code, detection, manual) {
+      const indexed = state.codeIndex.get(code);
+      if (indexed && indexed.status === 'PACKED') {
+        rememberOverlayMark(code, detection, 'DUPLICATE', 'TEKRAR');
+        addProblem(code, 'DUPLICATE', 'Daha önce toplandı', indexed.cartonNo || '', manual);
+        return;
+      }
+
+      const current = state.currentCarton.find(item => item.code === code);
+      if (current) {
+        if (isSameDetectionPosition(current.box, detection)) {
+          rememberOverlayMark(code, detection, 'OK', 'OK');
+          return;
+        }
+        rememberOverlayMark(code, detection, 'DUPLICATE', 'TEKRAR');
+        addProblem(code, 'DUPLICATE', 'Aynı koli içinde tekrar okundu', state.currentCartonNo, manual);
+        return;
+      }
+
+      const box = getDetectionBox(detection);
+      state.currentCarton.push({ code, rowNumber: 0, box });
+      state.codeIndex.set(code, { status: 'CURRENT', cartonNo: '' });
+      state.cycleEvents.push({ code, rowNumber: 0, result: 'OK' });
+      rememberOverlayMark(code, detection, 'OK', 'OK');
+      state.okList.unshift({ code, note: `Koli ${state.currentCartonNo} | toplandı` });
+      state.okList = state.okList.slice(0, 80);
+      beep('ok');
+      renderAll();
+      const expected = Number(state.activeJob.cartonSize) || 1;
+      if (state.currentCarton.length >= expected) commitCurrentCarton();
+    }
+
+    function isSameDetectionPosition(storedBox, detection) {
+      const nextBox = getDetectionBox(detection);
+      if (!storedBox || !nextBox) return false;
+      const overlap = intersectBoxes(expandBox(storedBox, Math.max(12, Math.round(Math.max(storedBox.width, storedBox.height) * 0.25))), nextBox);
+      if (!overlap) return false;
+      const overlapArea = overlap.width * overlap.height;
+      const nextArea = nextBox.width * nextBox.height;
+      return nextArea > 0 && overlapArea / nextArea > 0.45;
+    }
+
     function closeCurrentCartonManually() {
       if (!state.activeJob) {
-        showNotice('Önce müşteri kod datasını yüklemelisin.', 'warn');
+        showNotice('Önce müşteri kod datasını yükle veya datasız toplama modunu hazırla.', 'warn');
         return;
       }
       if (state.committing) return;
@@ -747,6 +846,12 @@
     }
 
     function resetCurrentCarton(showMessage) {
+      if (isCollectionJob()) {
+        state.currentCarton.forEach(item => {
+          const indexed = state.codeIndex.get(item.code);
+          if (indexed && indexed.status === 'CURRENT') state.codeIndex.delete(item.code);
+        });
+      }
       state.currentCarton = [];
       state.cycleEvents = [];
       state.overlayMarks.clear();
@@ -927,9 +1032,12 @@
     function rememberOverlayMark(code, detection, result, label) {
       const box = getDetectionBox(detection);
       if (!box) return;
-      const previous = state.overlayMarks.get(code);
+      const key = result === 'DUPLICATE'
+        ? `${code}:DUPLICATE:${Math.round(box.x / 20)}:${Math.round(box.y / 20)}`
+        : code;
+      const previous = state.overlayMarks.get(key);
       if (previous && previous.result === 'OK' && result !== 'OK') return;
-      state.overlayMarks.set(code, {
+      state.overlayMarks.set(key, {
         code,
         result,
         label,
@@ -1058,9 +1166,36 @@
       ctx.clearRect(0, 0, els.overlay.width, els.overlay.height);
     }
 
+    function getSelectedOperationMode() {
+      return els.operationModeSelect ? els.operationModeSelect.value : 'compare';
+    }
+
+    function isCollectionJob() {
+      return state.activeJob && state.activeJob.mode === 'collect';
+    }
+
+    function updateOperationModeUi() {
+      state.operationMode = getSelectedOperationMode();
+      const collectMode = state.operationMode === 'collect';
+      els.operationModeHint.textContent = collectMode
+        ? 'Bu modda müşteri datası aranmaz; okunan tekil kodlar toplanır, tekrarlar ayrıca gösterilir.'
+        : 'Bu modda yüklenen müşteri kodları ile karşılaştırma yapılır.';
+      els.importBtn.textContent = collectMode ? 'Datasız Toplama Modunu Hazırla' : 'Kod Datasını Yükle ve Hazırla';
+      els.fileInput.disabled = collectMode;
+      els.codesText.disabled = collectMode;
+      els.fileInput.parentElement.style.opacity = collectMode ? '.55' : '1';
+      els.codesText.parentElement.style.opacity = collectMode ? '.55' : '1';
+      els.cameraEmpty.innerHTML = collectMode
+        ? '<div><strong>Kamerayı başlat</strong>Datasız modda kod dosyası gerekmez.</div>'
+        : '<div><strong>Kamerayı başlat</strong>Kod datasını yükle, sonra Başlat.</div>';
+      renderAll();
+    }
+
     function renderAll() {
       els.enginePill.textContent = state.detectorEngine ? `Motor: ${state.detectorEngine} | ${getModeLabel()}` : `Motor: bekliyor | ${getModeLabel()}`;
-      els.jobPill.textContent = state.activeJob ? `${state.activeJob.productName || state.activeJob.customer || 'Aktif data'} | ${state.activeJob.cartonSize} adet` : 'Data yok';
+      els.jobPill.textContent = state.activeJob
+        ? `${isCollectionJob() ? 'Datasız toplama' : (state.activeJob.productName || state.activeJob.customer || 'Aktif data')} | ${state.activeJob.cartonSize} adet`
+        : (getSelectedOperationMode() === 'collect' ? 'Datasız mod' : 'Data yok');
       els.readyPill.textContent = state.committing ? 'Kayıt yapılıyor' : (state.scanning ? 'Tarama aktif' : 'Hazır');
       els.scanStatePill.textContent = state.scanning ? 'Açık' : 'Kapalı';
       els.scanStatePill.className = state.scanning ? 'pill ok' : 'pill';
@@ -1085,17 +1220,17 @@
 
     function renderResultLists() {
       renderList(els.okList, state.okList);
-      renderList(els.nokList, state.nokList);
+      renderList(els.nokList, state.nokList, isCollectionJob() ? 'Datasız modda N.OK karşılaştırması yapılmaz.' : 'Kayıt yok.');
       renderList(els.duplicateList, state.duplicateList);
       els.okCount.textContent = state.okList.length;
       els.nokCount.textContent = state.nokList.length;
       els.duplicateCount.textContent = state.duplicateList.length;
     }
 
-    function renderList(target, rows) {
+    function renderList(target, rows, emptyText = 'Kayıt yok.') {
       target.innerHTML = rows.length
         ? rows.map(row => `<div class="code-line">${escapeHtml(row.code)}<small>${escapeHtml(row.note || '')}</small></div>`).join('')
-        : '<div class="hint">Kayıt yok.</div>';
+        : `<div class="hint">${escapeHtml(emptyText)}</div>`;
     }
 
     function setImportProgress(ratio, text) {
