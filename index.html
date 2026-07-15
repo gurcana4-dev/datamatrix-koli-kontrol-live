@@ -15,27 +15,33 @@
   <link rel="icon" type="image/png" href="favicon.png">
   <style>
     :root {
-      --bg: #f6f7f9;
-      --panel: #ffffff;
-      --ink: #17211b;
-      --muted: #66736c;
-      --line: #dfe5e1;
-      --accent: #0f766e;
-      --accent-soft: #dff5f1;
-      --ok: #15803d;
-      --ok-soft: #dcfce7;
-      --bad: #b91c1c;
-      --bad-soft: #fee2e2;
-      --warn: #b45309;
-      --warn-soft: #fef3c7;
-      --shadow: 0 12px 34px rgba(23, 33, 27, .08);
+      --bg: #07110f;
+      --panel: #0f1f1d;
+      --panel-soft: #132a27;
+      --field: #0b1917;
+      --ink: #ecfffb;
+      --muted: #93aaa6;
+      --line: #244743;
+      --accent: #14b8a6;
+      --accent-soft: rgba(20, 184, 166, .14);
+      --ok: #22c55e;
+      --ok-soft: rgba(34, 197, 94, .14);
+      --bad: #ef4444;
+      --bad-soft: rgba(239, 68, 68, .14);
+      --warn: #facc15;
+      --warn-soft: rgba(250, 204, 21, .15);
+      --shadow: 0 20px 58px rgba(0, 0, 0, .28);
     }
 
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      background: var(--bg);
+      overflow-x: hidden;
+      background:
+        radial-gradient(circle at 10% -10%, rgba(20, 184, 166, .22), transparent 34%),
+        radial-gradient(circle at 100% 100%, rgba(34, 197, 94, .13), transparent 34%),
+        var(--bg);
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -43,9 +49,10 @@
     button, input, select, textarea { font: inherit; }
     button {
       border: 0;
-      border-radius: 8px;
-      padding: 11px 14px;
-      background: var(--ink);
+      border-radius: 12px;
+      min-height: 42px;
+      padding: 10px 14px;
+      background: #183633;
       color: #fff;
       font-weight: 850;
       cursor: pointer;
@@ -54,14 +61,15 @@
     input, select, textarea {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
+      border-radius: 12px;
+      background: var(--field);
       color: var(--ink);
-      padding: 10px 11px;
+      padding: 9px 11px;
       outline: 0;
     }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(20, 184, 166, .12); }
     textarea {
-      min-height: 108px;
+      min-height: 76px;
       resize: vertical;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
@@ -70,16 +78,16 @@
       display: block;
       margin: 0 0 6px;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 850;
       letter-spacing: .02em;
       text-transform: uppercase;
     }
 
     .app {
-      width: min(1680px, calc(100vw - 18px));
+      width: min(1760px, calc(100% - 14px));
       margin: 0 auto;
-      padding: 10px 0 20px;
+      padding: 8px 0 16px;
     }
     .topbar {
       display: grid;
@@ -90,10 +98,10 @@
       padding: 12px 14px;
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 18px;
       box-shadow: var(--shadow);
     }
-    h1 { margin: 0; font-size: clamp(20px, 2.4vw, 30px); line-height: 1.05; }
+    h1 { margin: 0; font-size: clamp(22px, 2.4vw, 34px); line-height: 1.05; letter-spacing: -.03em; }
     .topbar p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
     .status-line { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .pill {
@@ -102,7 +110,7 @@
       min-height: 30px;
       padding: 6px 10px;
       border-radius: 999px;
-      background: #edf1ef;
+      background: rgba(236, 255, 251, .08);
       color: var(--muted);
       font-size: 12px;
       font-weight: 850;
@@ -115,45 +123,53 @@
 
     .layout {
       display: grid;
-      grid-template-columns: 350px minmax(440px, 1fr) 350px;
-      gap: 10px;
+      grid-template-columns: minmax(660px, 1fr) 430px;
+      grid-template-areas:
+        "scanner setup"
+        "scanner results";
+      gap: 12px;
       align-items: start;
     }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 8px;
+      border-radius: 18px;
       box-shadow: var(--shadow);
       overflow: hidden;
     }
+    .setup-panel { grid-area: setup; }
+    .scanner-panel { grid-area: scanner; }
+    .right-col { grid-area: results; }
     .panel-head {
       display: flex;
       justify-content: space-between;
       gap: 10px;
       align-items: center;
-      padding: 12px;
+      padding: 11px 12px;
       border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.035), transparent);
     }
     .panel-head h2 { margin: 0; font-size: 16px; }
-    .panel-body { padding: 12px; }
+    .panel-body { padding: 11px; }
     .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
     .field { margin-bottom: 9px; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .actions button { flex: 1 1 130px; }
-    .secondary { background: #edf1ef; color: var(--ink); border: 1px solid var(--line); }
+    .secondary { background: #183633; color: var(--ink); border: 1px solid var(--line); }
     .accent { background: var(--accent); }
     .danger { background: var(--bad); }
-    .progress { height: 10px; margin-top: 10px; border-radius: 999px; background: #e9eeeb; overflow: hidden; }
+    .progress { height: 9px; margin-top: 9px; border-radius: 999px; background: rgba(236,255,251,.08); overflow: hidden; }
     .progress > span { display: block; width: 0; height: 100%; background: var(--accent); transition: width .2s ease; }
     .hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 
     .camera-shell {
       position: relative;
       width: 100%;
-      min-height: 58vh;
+      height: clamp(360px, 50vh, 620px);
       background: #050807;
       overflow: hidden;
-      border-radius: 8px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
     }
     video, canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     canvas.overlay { pointer-events: none; }
@@ -168,24 +184,25 @@
       background: rgba(0,0,0,.16);
     }
     .camera-empty strong { display: block; margin-bottom: 7px; color: #fff; font-size: 18px; }
-    .scanner-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+    .scanner-controls { display: grid; grid-template-columns: 1.1fr repeat(4, minmax(0, .9fr)); gap: 8px; margin-top: 9px; }
     .carton-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
-    .scanner-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
-    .metric { padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfb; }
+    .scanner-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+    .metric { padding: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--field); }
     .metric span { display: block; color: var(--muted); font-size: 11px; font-weight: 850; text-transform: uppercase; }
     .metric strong { display: block; margin-top: 4px; font-size: 22px; line-height: 1; }
-    .current-codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 6px; margin-top: 9px; }
-    .slot { min-height: 32px; border: 1px solid var(--line); border-radius: 8px; display: grid; place-items: center; color: var(--muted); font-size: 12px; font-weight: 900; background: #fff; }
+    .current-codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); gap: 5px; margin-top: 8px; }
+    .slot { min-height: 27px; border: 1px solid var(--line); border-radius: 9px; display: grid; place-items: center; color: var(--muted); font-size: 11px; font-weight: 900; background: var(--field); }
     .slot.filled { background: var(--ok-soft); border-color: #86efac; color: var(--ok); }
 
     .result-columns { display: grid; gap: 9px; }
-    .result-box { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+    .right-col .result-columns { grid-template-columns: 1fr; }
+    .result-box { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--field); }
     .result-box h3 { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0; padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: 13px; }
     .result-box.ok h3 { background: var(--ok-soft); color: var(--ok); }
     .result-box.bad h3 { background: var(--bad-soft); color: var(--bad); }
     .result-box.warn h3 { background: var(--warn-soft); color: var(--warn); }
-    .result-list { max-height: 190px; overflow: auto; padding: 8px; display: grid; gap: 6px; }
-    .code-line { padding: 8px; border: 1px solid var(--line); border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.35; word-break: break-all; background: #fbfcfb; }
+    .result-list { max-height: 148px; overflow: auto; padding: 8px; display: grid; gap: 6px; }
+    .code-line { padding: 8px; border: 1px solid var(--line); border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.35; word-break: break-all; background: rgba(236,255,251,.035); }
     .code-line small { display: block; margin-top: 4px; color: var(--muted); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 850; }
     .manual-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 9px; }
 
@@ -207,19 +224,28 @@
     .notice-card.warn { border-color: #fcd34d; color: var(--warn); }
 
     @media (max-width: 1220px) {
-      .layout { grid-template-columns: 340px 1fr; }
-      .right-col { grid-column: 1 / -1; }
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "setup"
+          "scanner"
+          "results";
+      }
       .result-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .right-col .result-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .camera-shell { height: clamp(340px, 46vh, 600px); }
     }
     @media (max-width: 820px) {
       .app { width: min(100vw - 8px, 760px); padding-top: 4px; }
       .topbar, .layout { grid-template-columns: 1fr; }
       .status-line { justify-content: flex-start; }
       .field-grid, .scanner-controls, .scanner-options, .carton-strip, .result-columns { grid-template-columns: 1fr 1fr; }
-      .camera-shell { min-height: 48vh; }
+      .right-col .result-columns { grid-template-columns: 1fr; }
+      .camera-shell { height: 48vh; min-height: 360px; }
     }
     @media (max-width: 520px) {
       .field-grid, .scanner-controls, .scanner-options, .carton-strip, .result-columns, .manual-row { grid-template-columns: 1fr; }
+      .camera-shell { min-height: 320px; }
     }
   </style>
 </head>
@@ -238,7 +264,7 @@
     </header>
 
     <main class="layout">
-      <section class="panel">
+      <section class="panel setup-panel">
         <div class="panel-head"><h2>Müşteri Datası</h2></div>
         <div class="panel-body">
           <div class="field">
@@ -272,7 +298,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel scanner-panel">
         <div class="panel-head">
           <h2>Canlı Çoklu Okuma</h2>
           <span class="pill" id="scanStatePill">Kapalı</span>
@@ -292,6 +318,21 @@
           </div>
           <div class="scanner-options">
             <div>
+              <label for="engineSelect">Okuma Motoru</label>
+              <select id="engineSelect">
+                <option value="auto" selected>Otomatik</option>
+                <option value="native">Native BarcodeDetector</option>
+                <option value="zxing">ZXing WASM</option>
+              </select>
+            </div>
+            <div>
+              <label for="preprocessSelect">Görüntü İşleme</label>
+              <select id="preprocessSelect">
+                <option value="normal" selected>Normal</option>
+                <option value="contrast">S/B Kontrast</option>
+              </select>
+            </div>
+            <div>
               <label for="scanModeSelect">Tarama Modu</label>
               <select id="scanModeSelect">
                 <option value="performance" selected>Performans: rehber + akıllı konum</option>
@@ -307,7 +348,7 @@
               </select>
             </div>
           </div>
-          <p class="hint">Performans modu koli alanını önceliklendirir; okunan konumları maskeleyip kalan kodlara odaklanır.</p>
+          <p class="hint">Performans modu koli alanını önceliklendirir. Tablet yavaşsa Full HD + ZXing WASM denenebilir; S/B Kontrast opsiyoneldir.</p>
           <div class="carton-strip">
             <div class="metric"><span>Aktif koli</span><strong id="cartonNoMetric">-</strong></div>
             <div class="metric"><span>Koli doluluk</span><strong id="cartonFillMetric">0/0</strong></div>
@@ -356,6 +397,8 @@
       recentProblemAt: new Map(),
       overlayMarks: new Map(),
       operationMode: 'compare',
+      detectorPreference: 'auto',
+      preprocessMode: 'normal',
       scanMode: 'performance',
       guideEnabled: true,
       scanCanvas: null,
@@ -371,7 +414,7 @@
       enginePill: $('enginePill'), jobPill: $('jobPill'), readyPill: $('readyPill'), scanStatePill: $('scanStatePill'),
       video: $('video'), overlay: $('overlay'), cameraEmpty: $('cameraEmpty'),
       startBtn: $('startBtn'), stopBtn: $('stopBtn'), resetCartonBtn: $('resetCartonBtn'), closeCartonBtn: $('closeCartonBtn'), resolutionSelect: $('resolutionSelect'),
-      scanModeSelect: $('scanModeSelect'), guideSelect: $('guideSelect'),
+      scanModeSelect: $('scanModeSelect'), guideSelect: $('guideSelect'), engineSelect: $('engineSelect'), preprocessSelect: $('preprocessSelect'),
       cartonNoMetric: $('cartonNoMetric'), cartonFillMetric: $('cartonFillMetric'), durationMetric: $('durationMetric'), indexMetric: $('indexMetric'),
       currentSlots: $('currentSlots'), manualCodeInput: $('manualCodeInput'), manualBtn: $('manualBtn'),
       okList: $('okList'), nokList: $('nokList'), duplicateList: $('duplicateList'),
@@ -382,6 +425,7 @@
     document.addEventListener('DOMContentLoaded', init);
 
     function init() {
+      restoreScannerPreferences();
       els.operationModeSelect.addEventListener('change', updateOperationModeUi);
       els.importBtn.addEventListener('click', importCodes);
       els.startBtn.addEventListener('click', startScanner);
@@ -392,6 +436,19 @@
         state.scanMode = els.scanModeSelect.value;
         state.scanFallback = false;
         drawOverlay([]);
+        renderAll();
+      });
+      els.engineSelect.addEventListener('change', () => {
+        state.detectorPreference = els.engineSelect.value || 'auto';
+        saveScannerPreferences();
+        state.detectorEngine = '';
+        if (state.scanning) showNotice('Okuma motoru değişti. Etkin olması için Durdur/Başlat yap.', 'warn');
+        renderAll();
+      });
+      els.preprocessSelect.addEventListener('change', () => {
+        state.preprocessMode = els.preprocessSelect.value || 'normal';
+        saveScannerPreferences();
+        state.scanFallback = false;
         renderAll();
       });
       els.guideSelect.addEventListener('change', () => {
@@ -573,6 +630,8 @@
       try {
         await stopScanner(false);
         state.scanMode = els.scanModeSelect.value || 'performance';
+        state.detectorPreference = els.engineSelect.value || 'auto';
+        state.preprocessMode = els.preprocessSelect.value || 'normal';
         state.guideEnabled = els.guideSelect.value !== 'off';
         state.scanFallback = false;
         const [width, height] = els.resolutionSelect.value.split('x').map(Number);
@@ -615,21 +674,76 @@
 
     async function createDetector() {
       const requested = ['data_matrix', 'qr_code'];
+      const preference = state.detectorPreference || 'auto';
+      if (preference === 'zxing') {
+        return createZxingDetector(requested, true);
+      }
+      if (preference === 'native') {
+        return await createNativeDetector(requested, true);
+      }
+
+      const nativeDetector = await createNativeDetector(requested, false);
+      if (nativeDetector) return nativeDetector;
+      return createZxingDetector(requested, true);
+    }
+
+    async function createNativeDetector(requested, required) {
       if ('BarcodeDetector' in window) {
         try {
           const supported = BarcodeDetector.getSupportedFormats ? await BarcodeDetector.getSupportedFormats() : requested;
           const formats = requested.filter(format => supported.includes(format));
-          if (formats.length) {
+          const supportsDataMatrix = !BarcodeDetector.getSupportedFormats || formats.includes('data_matrix');
+          if (formats.length && supportsDataMatrix) {
             state.detectorEngine = 'Native BarcodeDetector';
             return new BarcodeDetector({ formats });
           }
-        } catch (error) {}
+        } catch (error) {
+          if (required) throw error;
+        }
       }
+      if (required) throw new Error('Native BarcodeDetector bu cihazda DataMatrix için uygun değil.');
+      return null;
+    }
+
+    function createZxingDetector(requested, required) {
       if (window.BarcodeDetectionAPI && window.BarcodeDetectionAPI.BarcodeDetector) {
         state.detectorEngine = 'ZXing WASM';
         return new window.BarcodeDetectionAPI.BarcodeDetector({ formats: requested });
       }
-      throw new Error('DataMatrix okuma motoru başlatılamadı.');
+      if (required) throw new Error('ZXing WASM motoru yüklenemedi. İnternet bağlantısını kontrol edip sayfayı yenile.');
+      return null;
+    }
+
+    function getDetectorPreferenceLabel() {
+      if (state.detectorPreference === 'native') return 'Native seçili';
+      if (state.detectorPreference === 'zxing') return 'ZXing seçili';
+      return 'Otomatik';
+    }
+
+    function getPreprocessLabel() {
+      return state.preprocessMode === 'contrast' ? 'S/B Kontrast' : 'Normal görüntü';
+    }
+
+    function restoreScannerPreferences() {
+      const engine = localStorage.getItem('dm_engine_preference');
+      const preprocess = localStorage.getItem('dm_preprocess_preference');
+      if (engine && selectHasOption(els.engineSelect, engine)) {
+        els.engineSelect.value = engine;
+        state.detectorPreference = engine;
+      }
+      if (preprocess && selectHasOption(els.preprocessSelect, preprocess)) {
+        els.preprocessSelect.value = preprocess;
+        state.preprocessMode = preprocess;
+      }
+    }
+
+    function selectHasOption(select, value) {
+      return Array.from(select.options).some(option => option.value === value);
+    }
+
+    function saveScannerPreferences() {
+      localStorage.setItem('dm_engine_preference', els.engineSelect.value || 'auto');
+      localStorage.setItem('dm_preprocess_preference', els.preprocessSelect.value || 'normal');
     }
 
     async function scanLoop() {
@@ -925,15 +1039,19 @@
 
     function prepareScanFrame() {
       const profile = getScanProfile();
-      if (!profile.useRoi || state.scanFallback) return getFullScanFrame();
-
       const video = els.video;
-      const guideBox = getGuideBox(video.videoWidth, video.videoHeight, profile);
+      const fullBox = { x: 0, y: 0, width: video.videoWidth, height: video.videoHeight };
+      if ((!profile.useRoi || state.scanFallback) && !shouldPreprocessFrame()) return getFullScanFrame();
+
+      const guideBox = profile.useRoi && !state.scanFallback
+        ? getGuideBox(video.videoWidth, video.videoHeight, profile)
+        : fullBox;
       if (!guideBox.width || !guideBox.height) return getFullScanFrame();
 
       const sourceCanvas = getScanCanvas(Math.round(guideBox.width), Math.round(guideBox.height));
       const sourceContext = state.scanContext;
       sourceContext.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+      sourceContext.filter = getFrameFilter();
       sourceContext.drawImage(
         video,
         guideBox.x,
@@ -945,7 +1063,8 @@
         sourceCanvas.width,
         sourceCanvas.height
       );
-      if (profile.maskRemembered) maskRememberedBoxes(sourceContext, guideBox);
+      sourceContext.filter = 'none';
+      if (profile.maskRemembered && profile.useRoi && !state.scanFallback) maskRememberedBoxes(sourceContext, guideBox);
       return {
         source: sourceCanvas,
         offsetX: guideBox.x,
@@ -953,6 +1072,14 @@
         scaleX: guideBox.width / sourceCanvas.width,
         scaleY: guideBox.height / sourceCanvas.height
       };
+    }
+
+    function shouldPreprocessFrame() {
+      return state.preprocessMode === 'contrast';
+    }
+
+    function getFrameFilter() {
+      return shouldPreprocessFrame() ? 'grayscale(1) contrast(1.35) brightness(1.05)' : 'none';
     }
 
     function getFullScanFrame() {
@@ -1192,7 +1319,8 @@
     }
 
     function renderAll() {
-      els.enginePill.textContent = state.detectorEngine ? `Motor: ${state.detectorEngine} | ${getModeLabel()}` : `Motor: bekliyor | ${getModeLabel()}`;
+      const engineText = state.detectorEngine || getDetectorPreferenceLabel();
+      els.enginePill.textContent = `Motor: ${engineText} | ${getModeLabel()} | ${getPreprocessLabel()}`;
       els.jobPill.textContent = state.activeJob
         ? `${isCollectionJob() ? 'Datasız toplama' : (state.activeJob.productName || state.activeJob.customer || 'Aktif data')} | ${state.activeJob.cartonSize} adet`
         : (getSelectedOperationMode() === 'collect' ? 'Datasız mod' : 'Data yok');
