@@ -482,6 +482,12 @@
       scanContext: null,
       scanFallback: false,
       cartonStartedAt: null,
+      uploadProxyIframe: null,
+      uploadProxyReady: false,
+      uploadProxyReadyPromise: null,
+      uploadProxyReadyResolve: null,
+      uploadProxyReadyReject: null,
+      uploadProxyPending: new Map(),
       deviceId: getDeviceId()
     };
     const els = {
@@ -503,6 +509,7 @@
 
     function init() {
       restoreScannerPreferences();
+      window.addEventListener('message', handleUploadProxyMessage);
       els.operationModeSelect.addEventListener('change', updateOperationModeUi);
       els.importBtn.addEventListener('click', importCodes);
       els.startBtn.addEventListener('click', startScanner);
@@ -591,7 +598,7 @@
 
         let uploaded = 0;
         const chunks = makeUploadChunks(parsed.codes, jobId);
-        setImportProgress(0, `${parsed.codes.length.toLocaleString('tr-TR')} kod ${chunks.length.toLocaleString('tr-TR')} güvenli paket halinde yüklenecek`);
+        setImportProgress(0, `${parsed.codes.length.toLocaleString('tr-TR')} kod ${chunks.length.toLocaleString('tr-TR')} hızlı paket halinde yüklenecek`);
         for (const chunk of chunks) {
           await uploadCodesChunk(jobId, chunk, parsed.codes.length, count => {
             uploaded += count;
@@ -1054,7 +1061,45 @@
       if (showMessage) showNotice('Aktif koli ekranı sıfırlandı.', 'warn');
     }
 
-    function makeUploadChunks(codes, jobId) {
+    function makeUploadChunks(codes) {
+      const chunks = [];
+      const maxCodes = 2000;
+      for (let index = 0; index < codes.length; index += maxCodes) {
+        chunks.push(codes.slice(index, index + maxCodes));
+      }
+      return chunks;
+    }
+
+    async function uploadCodesChunk(jobId, chunk, totalCodes, onUploaded, depth = 0) {
+      try {
+        const uploadInfo = await apiUploadCall({ action: 'appendCodesChunk', jobId, codes: chunk, stats: { duplicates: 0 } });
+        applyUploadInfo(chunk, uploadInfo);
+        onUploaded(chunk.length);
+      } catch (error) {
+        if (chunk.length > 80 && depth < 8 && isRetryableUploadError(error)) {
+          const middle = Math.ceil(chunk.length / 2);
+          await uploadCodesChunk(jobId, chunk.slice(0, middle), totalCodes, onUploaded, depth + 1);
+          await uploadCodesChunk(jobId, chunk.slice(middle), totalCodes, onUploaded, depth + 1);
+          return;
+        }
+        if (chunk.length > 1 && isRetryableUploadError(error)) {
+          await uploadCodesChunkViaJsonp(jobId, chunk, onUploaded);
+          return;
+        }
+        throw error;
+      }
+    }
+
+    async function uploadCodesChunkViaJsonp(jobId, chunk, onUploaded) {
+      const chunks = makeSafeJsonpChunks(chunk, jobId);
+      for (const safeChunk of chunks) {
+        const uploadInfo = await apiCall({ action: 'appendCodesChunk', jobId, codes: safeChunk, stats: { duplicates: 0 } });
+        applyUploadInfo(safeChunk, uploadInfo);
+        onUploaded(safeChunk.length);
+      }
+    }
+
+    function makeSafeJsonpChunks(codes, jobId) {
       const chunks = [];
       let chunk = [];
       const maxUrlLength = 5400;
@@ -1073,30 +1118,95 @@
       return chunks;
     }
 
-    async function uploadCodesChunk(jobId, chunk, totalCodes, onUploaded, depth = 0) {
-      try {
-        const uploadInfo = await apiCall({ action: 'appendCodesChunk', jobId, codes: chunk, stats: { duplicates: 0 } });
-        if (uploadInfo && uploadInfo.startRow) {
-          chunk.forEach((code, index) => {
-            const indexed = state.codeIndex.get(code);
-            if (indexed) indexed.rowNumber = Number(uploadInfo.startRow) + index;
-          });
-        }
-        onUploaded(chunk.length);
-      } catch (error) {
-        if (chunk.length > 1 && depth < 8 && isRetryableUploadError(error)) {
-          const middle = Math.ceil(chunk.length / 2);
-          await uploadCodesChunk(jobId, chunk.slice(0, middle), totalCodes, onUploaded, depth + 1);
-          await uploadCodesChunk(jobId, chunk.slice(middle), totalCodes, onUploaded, depth + 1);
-          return;
-        }
-        throw error;
-      }
+    function applyUploadInfo(chunk, uploadInfo) {
+      if (!uploadInfo || !uploadInfo.startRow) return;
+      chunk.forEach((code, index) => {
+        const indexed = state.codeIndex.get(code);
+        if (indexed) indexed.rowNumber = Number(uploadInfo.startRow) + index;
+      });
     }
 
     function isRetryableUploadError(error) {
       const message = error && error.message ? error.message : String(error || '');
       return /API|çağrısı|zaman aşımı|timeout|failed|başarısız/i.test(message);
+    }
+
+    function handleUploadProxyMessage(event) {
+      const data = event && event.data;
+      if (!data || data.source !== 'datamatrix-upload-proxy') return;
+      if (data.ready) {
+        state.uploadProxyReady = true;
+        if (state.uploadProxyReadyResolve) state.uploadProxyReadyResolve();
+        return;
+      }
+      if (!data.requestId || !state.uploadProxyPending.has(data.requestId)) return;
+      const pending = state.uploadProxyPending.get(data.requestId);
+      state.uploadProxyPending.delete(data.requestId);
+      window.clearTimeout(pending.timeout);
+      const response = data.response;
+      if (!response || response.ok === false) {
+        pending.reject(new Error(response && response.message ? response.message : 'Upload proxy hatası.'));
+        return;
+      }
+      pending.resolve(response.result);
+    }
+
+    function ensureUploadProxy() {
+      if (state.uploadProxyReady && state.uploadProxyIframe && state.uploadProxyIframe.contentWindow) {
+        return Promise.resolve();
+      }
+      if (state.uploadProxyReadyPromise) return state.uploadProxyReadyPromise;
+
+      state.uploadProxyReady = false;
+      if (state.uploadProxyIframe && state.uploadProxyIframe.parentNode) {
+        state.uploadProxyIframe.parentNode.removeChild(state.uploadProxyIframe);
+      }
+
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = API_URL + '?proxy=1&v=' + Date.now();
+      state.uploadProxyIframe = iframe;
+      state.uploadProxyReadyPromise = new Promise((resolve, reject) => {
+        const timeout = window.setTimeout(() => {
+          state.uploadProxyReadyPromise = null;
+          state.uploadProxyReadyResolve = null;
+          state.uploadProxyReadyReject = null;
+          reject(new Error('Upload proxy zaman aşımı.'));
+        }, 15000);
+        state.uploadProxyReadyResolve = () => {
+          window.clearTimeout(timeout);
+          state.uploadProxyReadyPromise = null;
+          state.uploadProxyReadyResolve = null;
+          state.uploadProxyReadyReject = null;
+          resolve();
+        };
+        state.uploadProxyReadyReject = reject;
+      });
+      document.body.appendChild(iframe);
+      return state.uploadProxyReadyPromise;
+    }
+
+    async function apiUploadCall(payload) {
+      await ensureUploadProxy();
+      return new Promise((resolve, reject) => {
+        const requestId = 'upload_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+        const timeout = window.setTimeout(() => {
+          state.uploadProxyPending.delete(requestId);
+          reject(new Error('Upload proxy paket zaman aşımı.'));
+        }, 180000);
+        state.uploadProxyPending.set(requestId, { resolve, reject, timeout });
+        try {
+          state.uploadProxyIframe.contentWindow.postMessage({
+            source: 'datamatrix-upload',
+            requestId,
+            payload
+          }, '*');
+        } catch (error) {
+          window.clearTimeout(timeout);
+          state.uploadProxyPending.delete(requestId);
+          reject(error);
+        }
+      });
     }
 
     function apiCall(payload) {
