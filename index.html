@@ -220,6 +220,24 @@
       border-radius: 18px;
     }
     video, canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .camera-shell.preprocess-contrast video {
+      filter: grayscale(1) contrast(1.35) brightness(1.05);
+    }
+    .camera-shell.preprocess-contrast::after {
+      content: "S/B KONTRAST";
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      z-index: 2;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, .72);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      pointer-events: none;
+    }
     canvas.overlay { pointer-events: none; }
     .camera-empty {
       position: absolute;
@@ -508,6 +526,7 @@
         state.preprocessMode = els.preprocessSelect.value || 'normal';
         saveScannerPreferences();
         state.scanFallback = false;
+        applyCameraDisplayFilter();
         renderAll();
       });
       els.guideSelect.addEventListener('change', () => {
@@ -794,6 +813,7 @@
         els.preprocessSelect.value = preprocess;
         state.preprocessMode = preprocess;
       }
+      applyCameraDisplayFilter();
     }
 
     function selectHasOption(select, value) {
@@ -803,6 +823,10 @@
     function saveScannerPreferences() {
       localStorage.setItem('dm_engine_preference', els.engineSelect.value || 'auto');
       localStorage.setItem('dm_preprocess_preference', els.preprocessSelect.value || 'normal');
+    }
+
+    function applyCameraDisplayFilter() {
+      els.cameraEmpty.parentElement.classList.toggle('preprocess-contrast', state.preprocessMode === 'contrast');
     }
 
     async function scanLoop() {
