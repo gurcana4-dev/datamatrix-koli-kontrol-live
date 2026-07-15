@@ -594,7 +594,20 @@
         resetCurrentCarton(false);
         renderAll();
 
-        await apiCall({ action: 'createJob', payload: { ...job, importDuplicates: parsed.duplicates } });
+        const fastLocalIndex = parsed.codes.length >= 5000;
+        const createdJob = await apiCall({
+          action: 'createJob',
+          payload: { ...job, importDuplicates: parsed.duplicates, indexOnly: fastLocalIndex }
+        });
+        state.activeJob = { ...job, ...(createdJob || {}), storageMode: fastLocalIndex ? 'localIndex' : 'sheetRows' };
+
+        if (fastLocalIndex) {
+          setImportProgress(1, `${parsed.codes.length.toLocaleString('tr-TR')} kod cihaz indeksinde hazır. Sheets'e okutulan/kapatılan kodlar yazılacak.`);
+          const skipped = parsed.suspectFragments ? ` | ${parsed.suspectFragments.toLocaleString('tr-TR')} kısa parça atlandı` : '';
+          showNotice(`Hızlı indeks hazır: ${parsed.codes.length.toLocaleString('tr-TR')} tekil kod${skipped}`, 'ok');
+          renderAll();
+          return;
+        }
 
         let uploaded = 0;
         const chunks = makeUploadChunks(parsed.codes, jobId);
@@ -953,7 +966,7 @@
       const now = Date.now();
       if (!manual && state.recentProblemAt.has(key) && now - state.recentProblemAt.get(key) < 1800) return;
       state.recentProblemAt.set(key, now);
-      state.cycleEvents.push({ code, result });
+      state.cycleEvents.push({ code, result, sourceCarton: sourceCarton || '' });
       if (result === 'NOK') {
         state.nokList.unshift({ code, note: reason });
         state.nokList = state.nokList.slice(0, 80);
@@ -1028,7 +1041,14 @@
       const map = new Map();
       state.cycleEvents.forEach(event => {
         const key = `${event.result}:${event.code}`;
-        if (!map.has(key)) map.set(key, { code: event.code, rowNumber: event.rowNumber || 0 });
+        if (!map.has(key)) {
+          map.set(key, {
+            code: event.code,
+            rowNumber: event.rowNumber || 0,
+            result: event.result || '',
+            sourceCarton: event.sourceCarton || ''
+          });
+        }
       });
       return Array.from(map.values());
     }
