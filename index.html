@@ -590,17 +590,13 @@
         await apiCall({ action: 'createJob', payload: { ...job, importDuplicates: parsed.duplicates } });
 
         let uploaded = 0;
-        const chunks = makeUploadChunks(parsed.codes);
+        const chunks = makeUploadChunks(parsed.codes, jobId);
+        setImportProgress(0, `${parsed.codes.length.toLocaleString('tr-TR')} kod ${chunks.length.toLocaleString('tr-TR')} güvenli paket halinde yüklenecek`);
         for (const chunk of chunks) {
-          const uploadInfo = await apiCall({ action: 'appendCodesChunk', jobId, codes: chunk, stats: { duplicates: 0 } });
-          if (uploadInfo && uploadInfo.startRow) {
-            chunk.forEach((code, index) => {
-              const indexed = state.codeIndex.get(code);
-              if (indexed) indexed.rowNumber = Number(uploadInfo.startRow) + index;
-            });
-          }
-          uploaded += chunk.length;
-          setImportProgress(uploaded / parsed.codes.length, `${uploaded.toLocaleString('tr-TR')} / ${parsed.codes.length.toLocaleString('tr-TR')} tekil kod yüklendi`);
+          await uploadCodesChunk(jobId, chunk, parsed.codes.length, count => {
+            uploaded += count;
+            setImportProgress(uploaded / parsed.codes.length, `${uploaded.toLocaleString('tr-TR')} / ${parsed.codes.length.toLocaleString('tr-TR')} tekil kod yüklendi`);
+          });
         }
         await apiCall({ action: 'finalizeImport', jobId });
 
@@ -1058,29 +1054,52 @@
       if (showMessage) showNotice('Aktif koli ekranı sıfırlandı.', 'warn');
     }
 
-    function makeUploadChunks(codes) {
+    function makeUploadChunks(codes, jobId) {
       const chunks = [];
       let chunk = [];
-      let size = 0;
-      const maxCodes = 900;
-      const maxChars = 85000;
+      const maxUrlLength = 5400;
+      const maxCodes = 80;
       codes.forEach(code => {
-        const nextSize = size + code.length + 8;
-        if (chunk.length && (chunk.length >= maxCodes || nextSize > maxChars)) {
+        const nextChunk = chunk.concat(code);
+        const nextUrl = buildJsonpUrl('__dmApiProbe__', { action: 'appendCodesChunk', jobId, codes: nextChunk, stats: { duplicates: 0 } });
+        if (chunk.length && (chunk.length >= maxCodes || nextUrl.length > maxUrlLength)) {
           chunks.push(chunk);
-          chunk = [];
-          size = 0;
+          chunk = [code];
+          return;
         }
-        chunk.push(code);
-        size += code.length + 8;
+        chunk = nextChunk;
       });
       if (chunk.length) chunks.push(chunk);
       return chunks;
     }
 
+    async function uploadCodesChunk(jobId, chunk, totalCodes, onUploaded, depth = 0) {
+      try {
+        const uploadInfo = await apiCall({ action: 'appendCodesChunk', jobId, codes: chunk, stats: { duplicates: 0 } });
+        if (uploadInfo && uploadInfo.startRow) {
+          chunk.forEach((code, index) => {
+            const indexed = state.codeIndex.get(code);
+            if (indexed) indexed.rowNumber = Number(uploadInfo.startRow) + index;
+          });
+        }
+        onUploaded(chunk.length);
+      } catch (error) {
+        if (chunk.length > 1 && depth < 8 && isRetryableUploadError(error)) {
+          const middle = Math.ceil(chunk.length / 2);
+          await uploadCodesChunk(jobId, chunk.slice(0, middle), totalCodes, onUploaded, depth + 1);
+          await uploadCodesChunk(jobId, chunk.slice(middle), totalCodes, onUploaded, depth + 1);
+          return;
+        }
+        throw error;
+      }
+    }
+
+    function isRetryableUploadError(error) {
+      const message = error && error.message ? error.message : String(error || '');
+      return /API|çağrısı|zaman aşımı|timeout|failed|başarısız/i.test(message);
+    }
+
     function apiCall(payload) {
-      const requestUrl = buildJsonpUrl('__dmApiProbe__', payload);
-      if (requestUrl.length > 6500) return apiPostCall(payload);
       return apiJsonpCall(payload);
     }
 
@@ -1118,55 +1137,6 @@
         };
         script.src = buildJsonpUrl(callback, payload);
         document.head.appendChild(script);
-      });
-    }
-
-    function apiPostCall(payload) {
-      return new Promise((resolve, reject) => {
-        const requestId = 'post_' + Date.now() + '_' + Math.random().toString(16).slice(2);
-        const iframeName = 'dm_api_iframe_' + requestId;
-        const iframe = document.createElement('iframe');
-        const form = document.createElement('form');
-        const input = document.createElement('input');
-        const timeout = window.setTimeout(() => {
-          cleanup();
-          reject(new Error('Apps Script API POST zaman aşımı.'));
-        }, 90000);
-
-        function cleanup() {
-          window.clearTimeout(timeout);
-          window.removeEventListener('message', onMessage);
-          if (form.parentNode) form.parentNode.removeChild(form);
-          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-        }
-
-        function onMessage(event) {
-          const data = event && event.data;
-          if (!data || data.source !== 'datamatrix-api' || data.requestId !== requestId) return;
-          cleanup();
-          const response = data.response;
-          if (!response || response.ok === false) {
-            reject(new Error(response && response.message ? response.message : 'Apps Script API POST hatası.'));
-            return;
-          }
-          resolve(response.result);
-        }
-
-        iframe.name = iframeName;
-        iframe.style.display = 'none';
-        form.method = 'POST';
-        form.action = API_URL;
-        form.target = iframeName;
-        form.acceptCharset = 'UTF-8';
-        form.style.display = 'none';
-        input.type = 'hidden';
-        input.name = 'payload';
-        input.value = JSON.stringify({ ...payload, transport: 'iframe', requestId });
-        form.appendChild(input);
-        window.addEventListener('message', onMessage);
-        document.body.appendChild(iframe);
-        document.body.appendChild(form);
-        form.submit();
       });
     }
 
