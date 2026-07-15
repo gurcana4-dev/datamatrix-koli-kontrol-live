@@ -103,6 +103,54 @@
     }
     h1 { margin: 0; font-size: clamp(22px, 2.4vw, 34px); line-height: 1.05; letter-spacing: -.03em; }
     .topbar p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-width: 0;
+    }
+    .app-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .app-logo {
+      width: 46px;
+      height: 46px;
+      border-radius: 13px;
+      box-shadow: 0 10px 28px rgba(20, 184, 166, .2);
+    }
+    .brand-text strong {
+      display: block;
+      font-size: clamp(22px, 2.2vw, 32px);
+      line-height: .95;
+      letter-spacing: -.04em;
+    }
+    .brand-text span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .brand-divider {
+      width: 1px;
+      height: 42px;
+      background: var(--line);
+    }
+    .rebul-logo {
+      display: block;
+      width: clamp(116px, 11vw, 156px);
+      height: 58px;
+      object-fit: contain;
+      padding: 3px 8px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #000;
+    }
     .status-line { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
     .pill {
       display: inline-flex;
@@ -239,6 +287,7 @@
       .app { width: min(100vw - 8px, 760px); padding-top: 4px; }
       .topbar, .layout { grid-template-columns: 1fr; }
       .status-line { justify-content: flex-start; }
+      .brand-lockup { justify-content: space-between; }
       .field-grid, .scanner-controls, .scanner-options, .carton-strip, .result-columns { grid-template-columns: 1fr 1fr; }
       .right-col .result-columns { grid-template-columns: 1fr; }
       .camera-shell { height: 48vh; min-height: 360px; }
@@ -246,15 +295,25 @@
     @media (max-width: 520px) {
       .field-grid, .scanner-controls, .scanner-options, .carton-strip, .result-columns, .manual-row { grid-template-columns: 1fr; }
       .camera-shell { min-height: 320px; }
+      .brand-lockup { gap: 10px; }
+      .brand-divider { display: none; }
+      .rebul-logo { width: 118px; height: 50px; }
     }
   </style>
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div>
-        <h1>DataMatrix Koli Kontrol</h1>
-        <p>Tek ekranda kamera, müşteri datası karşılaştırma ve koli bazlı kayıt.</p>
+      <div class="brand-lockup" aria-label="Codevera ve Rebul">
+        <div class="app-brand">
+          <img class="app-logo" src="favicon.png" alt="Codevera">
+          <div class="brand-text">
+            <strong>Codevera</strong>
+            <span>DataMatrix Control</span>
+          </div>
+        </div>
+        <div class="brand-divider" aria-hidden="true"></div>
+        <img class="rebul-logo" src="rebul-logo.jpg" alt="Rebul 1895">
       </div>
       <div class="status-line">
         <span class="pill accent" id="enginePill">Motor: bekliyor</span>
