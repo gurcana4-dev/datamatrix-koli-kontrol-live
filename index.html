@@ -252,7 +252,7 @@
     .camera-empty strong { display: block; margin-bottom: 7px; color: #fff; font-size: 18px; }
     .scanner-controls { display: grid; grid-template-columns: 1.1fr repeat(4, minmax(0, .9fr)); gap: 8px; margin-top: 9px; }
     .carton-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
-    .scanner-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+    .scanner-options { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
     .metric { padding: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--field); }
     .metric span { display: block; color: var(--muted); font-size: 11px; font-weight: 850; text-transform: uppercase; }
     .metric strong { display: block; margin-top: 4px; font-size: 22px; line-height: 1; }
@@ -403,6 +403,13 @@
               </select>
             </div>
             <div>
+              <label for="formatSelect">Kod Tipi</label>
+              <select id="formatSelect">
+                <option value="data_matrix" selected>DataMatrix hızlı</option>
+                <option value="data_matrix_qr">DataMatrix + QR</option>
+              </select>
+            </div>
+            <div>
               <label for="preprocessSelect">Görüntü İşleme</label>
               <select id="preprocessSelect">
                 <option value="normal" selected>Normal</option>
@@ -425,7 +432,7 @@
               </select>
             </div>
           </div>
-          <p class="hint">Performans modu koli alanını önceliklendirir. Tablet yavaşsa Full HD + ZXing WASM denenebilir; S/B Kontrast opsiyoneldir.</p>
+          <p class="hint">Performans modu koli alanını önceliklendirir. En hızlı kullanım: Full HD + DataMatrix hızlı. QR gerekiyorsa Kod Tipi alanından açılabilir.</p>
           <div class="carton-strip">
             <div class="metric"><span>Aktif koli</span><strong id="cartonNoMetric">-</strong></div>
             <div class="metric"><span>Koli doluluk</span><strong id="cartonFillMetric">0/0</strong></div>
@@ -475,6 +482,7 @@
       overlayMarks: new Map(),
       operationMode: 'compare',
       detectorPreference: 'auto',
+      scanFormat: 'data_matrix',
       preprocessMode: 'normal',
       scanMode: 'performance',
       guideEnabled: true,
@@ -497,7 +505,7 @@
       enginePill: $('enginePill'), jobPill: $('jobPill'), readyPill: $('readyPill'), scanStatePill: $('scanStatePill'),
       video: $('video'), overlay: $('overlay'), cameraEmpty: $('cameraEmpty'),
       startBtn: $('startBtn'), stopBtn: $('stopBtn'), resetCartonBtn: $('resetCartonBtn'), closeCartonBtn: $('closeCartonBtn'), resolutionSelect: $('resolutionSelect'),
-      scanModeSelect: $('scanModeSelect'), guideSelect: $('guideSelect'), engineSelect: $('engineSelect'), preprocessSelect: $('preprocessSelect'),
+      scanModeSelect: $('scanModeSelect'), guideSelect: $('guideSelect'), engineSelect: $('engineSelect'), formatSelect: $('formatSelect'), preprocessSelect: $('preprocessSelect'),
       cartonNoMetric: $('cartonNoMetric'), cartonFillMetric: $('cartonFillMetric'), durationMetric: $('durationMetric'), indexMetric: $('indexMetric'),
       currentSlots: $('currentSlots'), manualCodeInput: $('manualCodeInput'), manualBtn: $('manualBtn'),
       okList: $('okList'), nokList: $('nokList'), duplicateList: $('duplicateList'),
@@ -527,6 +535,13 @@
         saveScannerPreferences();
         state.detectorEngine = '';
         if (state.scanning) showNotice('Okuma motoru değişti. Etkin olması için Durdur/Başlat yap.', 'warn');
+        renderAll();
+      });
+      els.formatSelect.addEventListener('change', () => {
+        state.scanFormat = els.formatSelect.value || 'data_matrix';
+        saveScannerPreferences();
+        state.detectorEngine = '';
+        if (state.scanning) showNotice('Kod tipi değişti. Etkin olması için Durdur/Başlat yap.', 'warn');
         renderAll();
       });
       els.preprocessSelect.addEventListener('change', () => {
@@ -725,11 +740,13 @@
         await stopScanner(false);
         state.scanMode = els.scanModeSelect.value || 'performance';
         state.detectorPreference = els.engineSelect.value || 'auto';
+        state.scanFormat = els.formatSelect.value || 'data_matrix';
         state.preprocessMode = els.preprocessSelect.value || 'normal';
         state.guideEnabled = els.guideSelect.value !== 'off';
         state.scanFallback = false;
         const [width, height] = els.resolutionSelect.value.split('x').map(Number);
         state.stream = await openCameraStream(width, height);
+        await tuneCameraStream(state.stream);
         els.video.srcObject = state.stream;
         await els.video.play();
         state.detector = await createDetector();
@@ -750,8 +767,8 @@
         throw new Error('Bu tarayıcı kamera erişimini desteklemiyor. Chrome veya Safari ile HTTPS linkini aç.');
       }
       const attempts = [
-        { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: width }, height: { ideal: height } } },
-        { audio: false, video: { facingMode: { ideal: 'environment' } } },
+        { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: width }, height: { ideal: height }, frameRate: { ideal: 30, max: 30 } } },
+        { audio: false, video: { facingMode: { ideal: 'environment' }, frameRate: { ideal: 30, max: 30 } } },
         { audio: false, video: true }
       ];
       let lastError = null;
@@ -766,8 +783,21 @@
       throw lastError || new Error('Kamera açılamadı.');
     }
 
+    async function tuneCameraStream(stream) {
+      try {
+        const track = stream && stream.getVideoTracks && stream.getVideoTracks()[0];
+        if (!track || !track.getCapabilities || !track.applyConstraints) return;
+        const capabilities = track.getCapabilities();
+        const advanced = {};
+        if (Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes('continuous')) advanced.focusMode = 'continuous';
+        if (Array.isArray(capabilities.exposureMode) && capabilities.exposureMode.includes('continuous')) advanced.exposureMode = 'continuous';
+        if (Array.isArray(capabilities.whiteBalanceMode) && capabilities.whiteBalanceMode.includes('continuous')) advanced.whiteBalanceMode = 'continuous';
+        if (Object.keys(advanced).length) await track.applyConstraints({ advanced: [advanced] });
+      } catch (error) {}
+    }
+
     async function createDetector() {
-      const requested = ['data_matrix', 'qr_code'];
+      const requested = getRequestedFormats();
       const preference = state.detectorPreference || 'auto';
       if (preference === 'zxing') {
         return createZxingDetector(requested, true);
@@ -779,6 +809,12 @@
       const nativeDetector = await createNativeDetector(requested, false);
       if (nativeDetector) return nativeDetector;
       return createZxingDetector(requested, true);
+    }
+
+    function getRequestedFormats() {
+      return state.scanFormat === 'data_matrix_qr'
+        ? ['data_matrix', 'qr_code']
+        : ['data_matrix'];
     }
 
     async function createNativeDetector(requested, required) {
@@ -818,12 +854,21 @@
       return state.preprocessMode === 'contrast' ? 'S/B Kontrast' : 'Normal görüntü';
     }
 
+    function getFormatLabel() {
+      return state.scanFormat === 'data_matrix_qr' ? 'DM+QR' : 'DataMatrix';
+    }
+
     function restoreScannerPreferences() {
       const engine = localStorage.getItem('dm_engine_preference');
+      const format = localStorage.getItem('dm_format_preference');
       const preprocess = localStorage.getItem('dm_preprocess_preference');
       if (engine && selectHasOption(els.engineSelect, engine)) {
         els.engineSelect.value = engine;
         state.detectorPreference = engine;
+      }
+      if (format && selectHasOption(els.formatSelect, format)) {
+        els.formatSelect.value = format;
+        state.scanFormat = format;
       }
       if (preprocess && selectHasOption(els.preprocessSelect, preprocess)) {
         els.preprocessSelect.value = preprocess;
@@ -838,6 +883,7 @@
 
     function saveScannerPreferences() {
       localStorage.setItem('dm_engine_preference', els.engineSelect.value || 'auto');
+      localStorage.setItem('dm_format_preference', els.formatSelect.value || 'data_matrix');
       localStorage.setItem('dm_preprocess_preference', els.preprocessSelect.value || 'normal');
     }
 
@@ -1273,12 +1319,12 @@
     function getScanProfile() {
       const mode = state.scanMode || 'performance';
       if (mode === 'standard') {
-        return { mode, useRoi: false, maskRemembered: false, guideScaleX: 0.9, guideScaleY: 0.82 };
+        return { mode, useRoi: false, maskRemembered: false, guideScaleX: 0.9, guideScaleY: 0.82, maskPaddingRatio: 0.12 };
       }
       if (mode === 'max') {
-        return { mode, useRoi: true, maskRemembered: true, guideScaleX: 0.94, guideScaleY: 0.88 };
+        return { mode, useRoi: true, maskRemembered: true, guideScaleX: 0.94, guideScaleY: 0.88, maskPaddingRatio: 0.14 };
       }
-      return { mode: 'performance', useRoi: true, maskRemembered: true, guideScaleX: 0.88, guideScaleY: 0.8 };
+      return { mode: 'performance', useRoi: true, maskRemembered: true, guideScaleX: 0.84, guideScaleY: 0.76, maskPaddingRatio: 0.18 };
     }
 
     function prepareScanFrame() {
@@ -1308,7 +1354,7 @@
         sourceCanvas.height
       );
       sourceContext.filter = 'none';
-      if (profile.maskRemembered && profile.useRoi && !state.scanFallback) maskRememberedBoxes(sourceContext, guideBox);
+      if (profile.maskRemembered && profile.useRoi && !state.scanFallback) maskRememberedBoxes(sourceContext, guideBox, profile);
       return {
         source: sourceCanvas,
         offsetX: guideBox.x,
@@ -1353,9 +1399,10 @@
       };
     }
 
-    function maskRememberedBoxes(sourceContext, guideBox) {
+    function maskRememberedBoxes(sourceContext, guideBox, profile) {
       state.overlayMarks.forEach(mark => {
-        const maskBox = intersectBoxes(expandBox(mark.box, 8), guideBox);
+        const maskPadding = getMaskPadding(mark.box, profile);
+        const maskBox = intersectBoxes(expandBox(mark.box, maskPadding), guideBox);
         if (!maskBox) return;
         sourceContext.fillStyle = '#f8fafc';
         sourceContext.fillRect(
@@ -1365,6 +1412,12 @@
           Math.max(1, maskBox.height)
         );
       });
+    }
+
+    function getMaskPadding(box, profile) {
+      const base = Math.max(box.width || 0, box.height || 0);
+      const ratio = profile && profile.maskPaddingRatio ? profile.maskPaddingRatio : 0.12;
+      return Math.max(10, Math.min(34, Math.round(base * ratio)));
     }
 
     function expandBox(box, padding) {
@@ -1564,7 +1617,7 @@
 
     function renderAll() {
       const engineText = state.detectorEngine || getDetectorPreferenceLabel();
-      els.enginePill.textContent = `Motor: ${engineText} | ${getModeLabel()} | ${getPreprocessLabel()}`;
+      els.enginePill.textContent = `Motor: ${engineText} | ${getFormatLabel()} | ${getModeLabel()} | ${getPreprocessLabel()}`;
       els.jobPill.textContent = state.activeJob
         ? `${isCollectionJob() ? 'Datasız toplama' : (state.activeJob.productName || state.activeJob.customer || 'Aktif data')} | ${state.activeJob.cartonSize} adet`
         : (getSelectedOperationMode() === 'collect' ? 'Datasız mod' : 'Data yok');
