@@ -472,6 +472,10 @@
       scanning: false,
       processing: false,
       committing: false,
+      pendingCommitCount: 0,
+      commitQueue: Promise.resolve(),
+      cartonClosedDuringFrame: false,
+      cartonTransitionUntil: 0,
       currentCartonNo: 1,
       currentCarton: [],
       cycleEvents: [],
@@ -518,6 +522,7 @@
     function init() {
       restoreScannerPreferences();
       window.addEventListener('message', handleUploadProxyMessage);
+      window.addEventListener('beforeunload', warnIfPendingCommits);
       els.operationModeSelect.addEventListener('change', updateOperationModeUi);
       els.importBtn.addEventListener('click', importCodes);
       els.startBtn.addEventListener('click', startScanner);
@@ -751,6 +756,8 @@
         await els.video.play();
         state.detector = await createDetector();
         state.scanning = true;
+        state.cartonTransitionUntil = 0;
+        state.cartonClosedDuringFrame = false;
         state.cartonStartedAt = state.cartonStartedAt || Date.now();
         els.cameraEmpty.style.display = 'none';
         renderAll();
@@ -910,7 +917,11 @@
           rawDetections = await state.detector.detect(els.video);
         }
         const detections = normalizeDetections(rawDetections || [], scanFrame);
-        (detections || []).forEach(detection => handleCode(detection.rawValue, detection, false));
+        state.cartonClosedDuringFrame = false;
+        for (const detection of detections || []) {
+          if (state.cartonClosedDuringFrame) break;
+          handleCode(detection.rawValue, detection, false);
+        }
         drawOverlay(detections || []);
       } catch (error) {
       } finally {
@@ -922,6 +933,7 @@
     function handleCode(rawCode, detection, manual) {
       const code = canonicalizeCode(rawCode);
       if (!code || state.committing) return;
+      if (!manual && state.cartonTransitionUntil && Date.now() < state.cartonTransitionUntil) return;
       if (isCollectionJob()) {
         handleCollectedCode(code, detection, manual);
         return;
@@ -1025,27 +1037,101 @@
       renderResultLists();
     }
 
-    async function commitCurrentCarton(manualClose = false) {
+    function commitCurrentCarton(manualClose = false) {
+      if (isCollectionJob()) {
+        queueCollectCartonCommit(manualClose);
+        return;
+      }
+      commitCurrentCartonBlocking(manualClose);
+    }
+
+    function queueCollectCartonCommit(manualClose = false) {
+      if (!state.activeJob || state.committing || !state.currentCarton.length) return;
+      const commit = buildCartonCommitRequest(manualClose);
+      const completedCarton = state.currentCartonNo;
+      state.currentCarton.forEach(item => {
+        const indexed = state.codeIndex.get(item.code);
+        if (indexed) {
+          indexed.status = 'PACKED';
+          indexed.cartonNo = completedCarton;
+        }
+      });
+      state.currentCartonNo = completedCarton + 1;
+      state.currentCarton = [];
+      state.cycleEvents = [];
+      state.overlayMarks.clear();
+      state.cartonStartedAt = Date.now();
+      state.cartonClosedDuringFrame = true;
+      state.cartonTransitionUntil = Date.now() + 450;
+      state.pendingCommitCount += 1;
+      els.durationMetric.textContent = `${commit.durationSeconds.toFixed(1)}s`;
+      renderAll();
+      showNotice(`${completedCarton}. koli alındı, kayıt arkada gönderiliyor.`, 'ok');
+      state.commitQueue = state.commitQueue
+        .catch(() => {})
+        .then(() => sendQueuedCartonCommit(commit));
+    }
+
+    function buildCartonCommitRequest(manualClose) {
+      const startedAt = state.cartonStartedAt || Date.now();
+      const durationSeconds = Math.round(((Date.now() - startedAt) / 1000) * 10) / 10;
+      return {
+        localCartonNo: state.currentCartonNo,
+        manualClose,
+        durationSeconds,
+        request: {
+          action: 'commitCarton',
+          payload: {
+            jobId: state.activeJob.jobId,
+            expectedQty: Number(state.activeJob.cartonSize) || state.currentCarton.length,
+            scans: compactCycleEvents(),
+            startedAt: new Date(startedAt).toISOString(),
+            durationSeconds,
+            deviceId: state.deviceId,
+            engine: state.detectorEngine,
+            clientCommitId: makeClientCommitId()
+          }
+        }
+      };
+    }
+
+    async function sendQueuedCartonCommit(commit) {
+      let response = null;
+      let lastError = null;
+      try {
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+          try {
+            response = await apiCall(commit.request);
+            break;
+          } catch (error) {
+            lastError = error;
+            if (attempt < 2) await delay(900);
+          }
+        }
+        if (!response || !response.cartonNo) {
+          throw lastError || new Error('Backend cevabı alınamadı.');
+        }
+        state.activeJob = response.job || state.activeJob;
+        state.currentCartonNo = Math.max(state.currentCartonNo, response.nextCartonNo || (response.cartonNo + 1));
+        const isPartial = response.status !== 'COMPLETE' || response.okQty < response.expectedQty;
+        showNotice(`${response.cartonNo}. koli e-tabloya yazıldı: ${response.okQty}/${response.expectedQty} OK`, isPartial ? 'warn' : 'ok');
+      } catch (error) {
+        showNotice(`${commit.localCartonNo}. koli e-tabloya yazılamadı: ${error.message || String(error)}`, 'bad');
+      } finally {
+        state.pendingCommitCount = Math.max(0, state.pendingCommitCount - 1);
+        renderAll();
+      }
+    }
+
+    async function commitCurrentCartonBlocking(manualClose = false) {
       if (state.committing || !state.activeJob) return;
       state.committing = true;
       const wasScanning = state.scanning;
       state.scanning = false;
       try {
-        const startedAt = state.cartonStartedAt || Date.now();
-        const durationSeconds = Math.round(((Date.now() - startedAt) / 1000) * 10) / 10;
-        const scans = compactCycleEvents();
-        const response = await apiCall({
-          action: 'commitCarton',
-          payload: {
-            jobId: state.activeJob.jobId,
-            expectedQty: Number(state.activeJob.cartonSize) || state.currentCarton.length,
-            scans,
-            startedAt: new Date(startedAt).toISOString(),
-            durationSeconds,
-            deviceId: state.deviceId,
-            engine: state.detectorEngine
-          }
-        });
+        const commit = buildCartonCommitRequest(manualClose);
+        const durationSeconds = commit.durationSeconds;
+        const response = await apiCall(commit.request);
         if (!response || !response.cartonNo) {
           throw new Error('Koli kaydı yapıldı ancak backend cevabı alınamadı.');
         }
@@ -1622,6 +1708,7 @@
         ? `${isCollectionJob() ? 'Datasız toplama' : (state.activeJob.productName || state.activeJob.customer || 'Aktif data')} | ${state.activeJob.cartonSize} adet`
         : (getSelectedOperationMode() === 'collect' ? 'Datasız mod' : 'Data yok');
       els.readyPill.textContent = state.committing ? 'Kayıt yapılıyor' : (state.scanning ? 'Tarama aktif' : 'Hazır');
+      if (!state.committing && state.pendingCommitCount) els.readyPill.textContent = `Kayıt kuyruğu: ${state.pendingCommitCount}`;
       els.scanStatePill.textContent = state.scanning ? 'Açık' : 'Kapalı';
       els.scanStatePill.className = state.scanning ? 'pill ok' : 'pill';
       els.indexMetric.textContent = state.codeIndex.size.toLocaleString('tr-TR');
@@ -1709,6 +1796,21 @@
       const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
       const suffix = Math.random().toString(16).slice(2, 10).toUpperCase();
       return `JOB_${stamp}_${suffix}`;
+    }
+
+    function makeClientCommitId() {
+      return `CC_${state.deviceId}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
+    }
+
+    function delay(ms) {
+      return new Promise(resolve => window.setTimeout(resolve, ms));
+    }
+
+    function warnIfPendingCommits(event) {
+      if (!state.pendingCommitCount) return undefined;
+      event.preventDefault();
+      event.returnValue = 'E-tabloya gönderilmeyi bekleyen koli kaydı var.';
+      return event.returnValue;
     }
 
     function getDeviceId() {
